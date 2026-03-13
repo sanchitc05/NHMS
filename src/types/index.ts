@@ -15,12 +15,19 @@ export interface Route {
   trafficLevel: 'low' | 'medium' | 'high';
   tollPlazas: TollPlaza[];
   emergencyCenters: EmergencyCenter[];
+  polyline?: [number, number][];      // Coordinates from Backend
+  sourceCoords?: [number, number];    // Point A
+  destCoords?: [number, number];      // Point B
+  exactSource?: string;
+  exactDest?: string;
 }
 
 export interface TollPlaza {
   id: string;
   name: string;
   location: string;
+  lat?: number;
+  lng?: number;
   cost: {
     car: number;
     motorcycle: number;
@@ -36,6 +43,8 @@ export interface EmergencyCenter {
   distance: number; // km from route
   phone: string;
   address: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface SpeedData {

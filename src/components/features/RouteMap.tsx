@@ -48,48 +48,6 @@ const emergencyIcons: Record<EmergencyCenter['type'], L.DivIcon> = {
   fire: fireIcon,
 };
 
-// Simulated coordinates for Mumbai-Pune route
-const routeCoordinates: Record<string, [number, number][]> = {
-  route1: [
-    [19.076, 72.8777], // Mumbai
-    [19.033, 73.029],  // Panvel
-    [18.752, 73.402],  // Khopoli
-    [18.753, 73.407],  // Lonavala
-    [18.52, 73.8567],  // Pune
-  ],
-  route2: [
-    [19.076, 72.8777], // Mumbai
-    [19.21, 73.09],    // Karjat
-    [18.96, 73.26],    // Malavli
-    [18.753, 73.407],  // Lonavala
-    [18.52, 73.8567],  // Pune
-  ],
-  route3: [
-    [19.076, 72.8777], // Mumbai
-    [19.033, 73.029],  // Panvel
-    [18.753, 73.407],  // Lonavala
-    [18.52, 73.8567],  // Pune
-  ],
-};
-
-// Toll plaza coordinates
-const tollCoordinates: Record<string, [number, number]> = {
-  tp1: [19.033, 73.029],
-  tp2: [18.52, 73.75],
-  tp3: [18.753, 73.407],
-  tp4: [18.96, 73.26],
-};
-
-// Emergency center coordinates
-const emergencyCoordinates: Record<string, [number, number]> = {
-  ec1: [19.05, 73.01],
-  ec2: [18.752, 73.402],
-  ec3: [18.85, 73.20],
-  ec4: [18.753, 73.42],
-  ec5: [18.53, 73.85],
-  ec6: [18.80, 73.32],
-};
-
 interface RouteMapProps {
   selectedRoute?: Route | null;
   tollPlazas?: TollPlaza[];
@@ -111,20 +69,21 @@ export function RouteMap({
   const polylinesRef = useRef<L.Polyline[]>([]);
   const [isMapReady, setIsMapReady] = useState(false);
 
-  const center: [number, number] = [18.8, 73.35];
+  // Default Center of India if no routes
+  const center: [number, number] = [20.5937, 78.9629];
 
   const getRouteColor = (routeId: string, isSelected: boolean) => {
     if (isSelected) return '#f97316';
     const colors = ['#3b82f6', '#22c55e', '#8b5cf6'];
     const index = routes.findIndex(r => r.id === routeId);
-    return colors[index % colors.length];
+    return colors[index % colors.length] || '#3b82f6';
   };
 
   // Initialize map
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    const map = L.map(mapRef.current).setView(center, 9);
+    const map = L.map(mapRef.current).setView(center, 5);
     
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -152,10 +111,13 @@ export function RouteMap({
     polylinesRef.current = [];
 
     const displayRoutes = showAllRoutes ? routes : (selectedRoute ? [selectedRoute] : []);
+    const allCoords: [number, number][] = [];
 
     // Add route polylines
     displayRoutes.forEach((route) => {
-      const coords = routeCoordinates[route.id] || routeCoordinates.route1;
+      if (!route.polyline || route.polyline.length === 0) return;
+      
+      const coords = route.polyline;
       const isSelected = selectedRoute?.id === route.id;
       
       const polyline = L.polyline(coords, {
@@ -165,16 +127,21 @@ export function RouteMap({
       }).addTo(map);
       
       polylinesRef.current.push(polyline);
+      if (isSelected || showAllRoutes) {
+        allCoords.push(...coords);
+      }
     });
 
-    // Add start and end markers
-    if (selectedRoute || routes.length > 0) {
-      const startMarker = L.marker([19.076, 72.8777], { icon: startIcon })
-        .bindPopup('<div class="font-semibold">Mumbai (Start)</div>')
+    // Add start and end markers based on the first display route 
+    // or selected route
+    const mainRoute = selectedRoute || displayRoutes[0];
+    if (mainRoute && mainRoute.sourceCoords && mainRoute.destCoords) {
+      const startMarker = L.marker(mainRoute.sourceCoords, { icon: startIcon })
+        .bindPopup('<div class="font-semibold">Starting Point</div>')
         .addTo(map);
       
-      const endMarker = L.marker([18.52, 73.8567], { icon: endIcon })
-        .bindPopup('<div class="font-semibold">Pune (Destination)</div>')
+      const endMarker = L.marker(mainRoute.destCoords, { icon: endIcon })
+        .bindPopup('<div class="font-semibold">Destination</div>')
         .addTo(map);
       
       markersRef.current.push(startMarker, endMarker);
@@ -183,8 +150,9 @@ export function RouteMap({
     // Add toll plaza markers
     if (selectedRoute?.tollPlazas) {
       selectedRoute.tollPlazas.forEach((plaza) => {
-        const coords = tollCoordinates[plaza.id];
-        if (!coords) return;
+        if (!plaza.lat || !plaza.lng) return;
+        
+        const coords: [number, number] = [plaza.lat, plaza.lng];
         
         const marker = L.marker(coords, { icon: tollIcon })
           .bindPopup(`
@@ -206,8 +174,9 @@ export function RouteMap({
     // Add emergency center markers
     if (selectedRoute?.emergencyCenters) {
       selectedRoute.emergencyCenters.forEach((center) => {
-        const coords = emergencyCoordinates[center.id];
-        if (!coords) return;
+        if (!center.lat || !center.lng) return;
+
+        const coords: [number, number] = [center.lat, center.lng];
         
         const marker = L.marker(coords, { icon: emergencyIcons[center.type] })
           .bindPopup(`
@@ -229,21 +198,10 @@ export function RouteMap({
       });
     }
 
-    // Fit bounds to selected route
-    if (selectedRoute && routeCoordinates[selectedRoute.id]) {
-      const bounds = L.latLngBounds(routeCoordinates[selectedRoute.id]);
+    // Fit bounds to the drawn polylines
+    if (allCoords.length > 0) {
+      const bounds = L.latLngBounds(allCoords);
       map.fitBounds(bounds, { padding: [50, 50] });
-    } else if (routes.length > 0) {
-      // Fit to all routes
-      const allCoords: [number, number][] = [];
-      routes.forEach(route => {
-        const coords = routeCoordinates[route.id];
-        if (coords) allCoords.push(...coords);
-      });
-      if (allCoords.length > 0) {
-        const bounds = L.latLngBounds(allCoords);
-        map.fitBounds(bounds, { padding: [50, 50] });
-      }
     }
   }, [selectedRoute, showAllRoutes, routes, isMapReady]);
 

@@ -23,6 +23,7 @@ import {
   Map,
   Loader2,
   ArrowLeft,
+  Target,
 } from 'lucide-react';
 import { mockRoutes } from '@/data/mockData';
 import { Route, VehicleType, EmergencyCenter } from '@/types';
@@ -60,6 +61,41 @@ export default function RoutePlanner() {
   const [vehicleType, setVehicleType] = useState<VehicleType>('car');
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [shouldSearch, setShouldSearch] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+
+  // Fetch current location
+  const handleCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser');
+      return;
+    }
+    
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const res = await fetch(`http://localhost:3000/api/geocode/reverse?lat=${position.coords.latitude}&lon=${position.coords.longitude}`);
+          const data = await res.json();
+          if (data.success && data.exactAddress) {
+            setSource(data.exactAddress);
+            setShouldSearch(false);
+          } else {
+            setSource('Current Location');
+          }
+        } catch (e) {
+          console.error('Reverse Geocode error:', e);
+          setSource('Current Location');
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        setIsLocating(false);
+        alert('Could not access your location. Please check your browser permissions.');
+      }
+    );
+  };
 
   // Use the API hook for fetching routes
   const { 
@@ -184,15 +220,27 @@ export default function RoutePlanner() {
                 {/* Source */}
                 <div className="space-y-2">
                   <Label htmlFor="source">Starting Point</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-success" />
-                    <Input
-                      id="source"
-                      value={source}
-                      onChange={(e) => handleSourceChange(e.target.value)}
-                      placeholder="Enter starting location"
-                      className="pl-10 gov-input"
-                    />
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-success" />
+                      <Input
+                        id="source"
+                        value={source}
+                        onChange={(e) => handleSourceChange(e.target.value)}
+                        placeholder="Enter starting location"
+                        className="pl-10 gov-input"
+                      />
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      onClick={handleCurrentLocation}
+                      disabled={isLocating}
+                      title="Use Current Location"
+                      className="shrink-0 h-[46px] w-[46px]" // matching gov-input height
+                    >
+                      {isLocating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Target className="w-5 h-5" />}
+                    </Button>
                   </div>
                 </div>
 
@@ -320,6 +368,12 @@ export default function RoutePlanner() {
                         <h4 className="font-semibold text-foreground text-lg mb-1">
                           {route.name}
                         </h4>
+                        {(route.exactSource || route.exactDest) && (
+                          <div className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                            <span className="font-medium">From:</span> {route.exactSource} <br/>
+                            <span className="font-medium">To:</span> {route.exactDest}
+                          </div>
+                        )}
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <MapPin className="w-4 h-4" />

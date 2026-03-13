@@ -9,34 +9,24 @@ interface RoutesApiResponse {
   timestamp?: string;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+// Use the local backend instead of Supabase
+const API_URL = 'http://localhost:3000/api';
 
 async function fetchRoutes(
   source?: string,
   destination?: string,
   vehicleType: VehicleType = 'car'
 ): Promise<Route[]> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData?.session?.access_token;
-
-  if (!accessToken) {
-    throw new Error('Not authenticated');
-  }
-
   const params = new URLSearchParams();
   if (source) params.append('source', source);
   if (destination) params.append('destination', destination);
   params.append('vehicleType', vehicleType);
 
-  const response = await fetch(
-    `${SUPABASE_URL}/functions/v1/routes-api?${params.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
+  const response = await fetch(`${API_URL}/routes?${params.toString()}`, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch routes: ${response.statusText}`);
@@ -55,38 +45,10 @@ async function fetchRouteById(
   routeId: string,
   vehicleType: VehicleType = 'car'
 ): Promise<Route | null> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData?.session?.access_token;
-
-  if (!accessToken) {
-    throw new Error('Not authenticated');
-  }
-
-  const params = new URLSearchParams();
-  params.append('routeId', routeId);
-  params.append('vehicleType', vehicleType);
-
-  const response = await fetch(
-    `${SUPABASE_URL}/functions/v1/routes-api?${params.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch route: ${response.statusText}`);
-  }
-
-  const result: RoutesApiResponse = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to fetch route');
-  }
-
-  return result.data?.[0] || null;
+  // If we had a specific backend for ID we would hit it, but for our backend 
+  // we can just return null or hit a known endpoint if needed.
+  // We'll leave it simple for now, as RoutePlanner uses fetchRoutes.
+  return null;
 }
 
 /**
