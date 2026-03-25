@@ -2,14 +2,22 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import connectDB from './db';
+import authRoutes from './routes/auth';
 
 dotenv.config();
+
+// Connect to MongoDB
+connectDB();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.use('/api/auth', authRoutes);
 
 // TollGuru API settings
 const TOLLGURU_API_KEY = process.env.TOLLGURU_API_KEY || '';
