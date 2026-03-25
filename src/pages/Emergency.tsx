@@ -17,8 +17,11 @@ import {
   Activity,
   Thermometer,
   ArrowLeft,
+  MapPin,
+  Loader2,
 } from 'lucide-react';
-import { emergencyCenters, firstAidInstructions } from '@/data/mockData';
+import { emergencyCenters as mockCenters, firstAidInstructions } from '@/data/mockData';
+import { EmergencyCenter } from '@/types';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -47,6 +50,49 @@ export default function Emergency() {
   const { isAuthenticated } = useAuth();
   const [micActive, setMicActive] = useState(false);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'no-answer' | 'message-sent'>('idle');
+
+  // Live nearby emergency centers state
+  const [centers, setCenters] = useState<EmergencyCenter[]>(mockCenters);
+  const [centersLoading, setCentersLoading] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser.');
+      setCentersLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const res = await fetch(
+            `http://localhost:3000/api/nearby-emergency?lat=${latitude}&lon=${longitude}`
+          );
+          const data = await res.json();
+          if (data.success && data.centers && data.centers.length > 0) {
+            setCenters(data.centers);
+            setLocationError(null);
+          } else {
+            // No results from API — keep mock data
+            setLocationError('No nearby centers found via live data. Showing default centers.');
+          }
+        } catch (err) {
+          console.error('Failed to fetch nearby centers:', err);
+          setLocationError('Could not fetch live data. Showing default centers.');
+        } finally {
+          setCentersLoading(false);
+        }
+      },
+      (err) => {
+        console.warn('Geolocation error:', err.message);
+        setLocationError('Location access denied. Showing default centers.');
+        setCentersLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }, []);
 
   const handleEmergencyCall = () => {
     if (callStatus !== 'idle') return;
@@ -190,42 +236,80 @@ export default function Emergency() {
 
           {/* Nearby Emergency Centers */}
           <TabsContent value="centers" className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Emergency Centers Near Your Route</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {emergencyCenters.map((center) => {
-                const Icon = emergencyIcons[center.type];
-                return (
-                  <div key={center.id} className="gov-card hover:shadow-lg transition-all">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-foreground">Emergency Centers Near You</h3>
+              {!centersLoading && !locationError && (
+                <span className="flex items-center gap-1 text-xs text-accent">
+                  <MapPin className="w-3 h-3" />
+                  Live from your location
+                </span>
+              )}
+            </div>
+
+            {/* Location error info banner */}
+            {locationError && (
+              <div className="flex items-center gap-2 p-3 bg-muted/60 rounded-lg text-sm text-muted-foreground">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                {locationError}
+              </div>
+            )}
+
+            {/* Loading skeleton */}
+            {centersLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="gov-card animate-pulse">
                     <div className="flex items-start gap-4">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        center.type === 'hospital' ? 'bg-emergency/10 text-emergency' :
-                        center.type === 'police' ? 'bg-primary/10 text-primary' :
-                        center.type === 'ambulance' ? 'bg-warning/10 text-warning' :
-                        'bg-destructive/10 text-destructive'
-                      }`}>
-                        <Icon className="w-6 h-6" />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-foreground mb-1">{center.name}</h4>
-                        <p className="text-sm text-muted-foreground mb-2">{center.address}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-accent font-medium">
-                            {center.distance} km away
-                          </span>
-                          <a
-                            href={`tel:${center.phone}`}
-                            className="flex items-center gap-1 text-sm text-accent hover:underline"
-                          >
-                            <Phone className="w-4 h-4" />
-                            {center.phone}
-                          </a>
+                      <div className="w-12 h-12 rounded-xl bg-muted" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-muted rounded w-3/4" />
+                        <div className="h-3 bg-muted rounded w-1/2" />
+                        <div className="flex justify-between">
+                          <div className="h-3 bg-muted rounded w-1/4" />
+                          <div className="h-3 bg-muted rounded w-1/4" />
                         </div>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {centers.map((center) => {
+                  const Icon = emergencyIcons[center.type];
+                  return (
+                    <div key={center.id} className="gov-card hover:shadow-lg transition-all">
+                      <div className="flex items-start gap-4">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                          center.type === 'hospital' ? 'bg-emergency/10 text-emergency' :
+                          center.type === 'police' ? 'bg-primary/10 text-primary' :
+                          center.type === 'ambulance' ? 'bg-warning/10 text-warning' :
+                          'bg-destructive/10 text-destructive'
+                        }`}>
+                          <Icon className="w-6 h-6" />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-foreground mb-1">{center.name}</h4>
+                          <p className="text-sm text-muted-foreground mb-2">{center.address}</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-accent font-medium">
+                              {center.distance} km away
+                            </span>
+                            <a
+                              href={`tel:${center.phone}`}
+                              className="flex items-center gap-1 text-sm text-accent hover:underline"
+                            >
+                              <Phone className="w-4 h-4" />
+                              {center.phone}
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
 
           {/* First Aid Instructions */}

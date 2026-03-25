@@ -364,6 +364,128 @@ app.get('/api/routes', async (req, res) => {
   }
 });
 
+// ─── Haversine distance (km) ─────────────────────────────────────────
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Nearby Emergency Centers (Overpass API) ─────────────────────────
+app.get('/api/nearby-emergency', async (req, res) => {
+  const { lat, lon } = req.query;
+  if (!lat || !lon) {
+    return res.status(400).json({ success: false, error: 'lat and lon are required' });
+  }
+
+  const userLat = parseFloat(lat as string);
+  const userLon = parseFloat(lon as string);
+  const radiusMeters = 10000; // 10 km
+
+  // Overpass QL: find hospitals, police, fire stations within radius
+  const overpassQuery = `
+    [out:json][timeout:10];
+    (
+      node["amenity"="hospital"](around:${radiusMeters},${userLat},${userLon});
+      way["amenity"="hospital"](around:${radiusMeters},${userLat},${userLon});
+      node["amenity"="police"](around:${radiusMeters},${userLat},${userLon});
+      way["amenity"="police"](around:${radiusMeters},${userLat},${userLon});
+      node["amenity"="fire_station"](around:${radiusMeters},${userLat},${userLon});
+      way["amenity"="fire_station"](around:${radiusMeters},${userLat},${userLon});
+    );
+    out center body;
+  `;
+
+  try {
+    const overpassRes = await axios.post(
+      'https://overpass-api.de/api/interpreter',
+      `data=${encodeURIComponent(overpassQuery)}`,
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'NHMS-Emergency/1.0' },
+        timeout: 12000,
+      }
+    );
+
+    const elements = (overpassRes.data as any)?.elements || [];
+
+    const typeMap: Record<string, 'hospital' | 'police' | 'fire'> = {
+      hospital: 'hospital',
+      police: 'police',
+      fire_station: 'fire',
+    };
+
+    const phoneMap: Record<string, string> = {
+      hospital: '108',
+      police: '100',
+      fire: '101',
+    };
+
+    const centers = elements
+      .map((el: any) => {
+        const elLat = el.lat ?? el.center?.lat;
+        const elLon = el.lon ?? el.center?.lon;
+        if (!elLat || !elLon) return null;
+
+        const amenity = el.tags?.amenity;
+        const mappedType = typeMap[amenity];
+        if (!mappedType) return null;
+
+        const name = el.tags?.name || el.tags?.['name:en'] || `${mappedType.charAt(0).toUpperCase() + mappedType.slice(1)} Station`;
+        const distance = haversineKm(userLat, userLon, elLat, elLon);
+        const phone = el.tags?.phone || el.tags?.['contact:phone'] || phoneMap[mappedType] || '';
+
+        // Build address from available tags
+        const addrParts = [
+          el.tags?.['addr:street'],
+          el.tags?.['addr:city'] || el.tags?.['addr:suburb'],
+          el.tags?.['addr:district'],
+        ].filter(Boolean);
+        const address = addrParts.length > 0 ? addrParts.join(', ') : (el.tags?.description || `Near your location`);
+
+        return {
+          id: `osm-${el.id}`,
+          name,
+          type: mappedType,
+          distance: parseFloat(distance.toFixed(1)),
+          phone,
+          address,
+          lat: elLat,
+          lng: elLon,
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => a.distance - b.distance)
+      .slice(0, 8);
+
+    // Always include the universal 108 ambulance service
+    const has108 = centers.some((c: any) => c.phone === '108' && c.type === 'hospital');
+    if (!has108) {
+      centers.unshift({
+        id: 'universal-108',
+        name: '108 Ambulance Service',
+        type: 'ambulance',
+        distance: 0,
+        phone: '108',
+        address: 'On-call Emergency Service (Pan-India)',
+        lat: userLat,
+        lng: userLon,
+      });
+    }
+
+    res.json({ success: true, centers });
+  } catch (error) {
+    console.error('Overpass API error:', error);
+    res.json({ success: true, centers: [] });
+  }
+});
+
 // ─── Reverse Geocode ─────────────────────────────────────────────────
 app.get('/api/geocode/reverse', async (req, res) => {
   const { lat, lon } = req.query;
