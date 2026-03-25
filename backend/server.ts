@@ -1,12 +1,19 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// TollGuru API settings
+const TOLLGURU_API_KEY = process.env.TOLLGURU_API_KEY || '';
+const TOLLGURU_API_URL = 'https://apis.tollguru.com/toll/v2';
 
 // Health check route
 app.get('/', (_req, res) => {
@@ -177,13 +184,41 @@ async function geocode(location: string): Promise<{ lat: number; lon: number; ex
   return null;
 }
 
+// ─── Polyline Decoder ────────────────────────────────────────────────
+function decodeTollGuruPolyline(encoded: string): number[][] {
+  const points = [];
+  let index = 0, len = encoded.length;
+  let lat = 0, lng = 0;
+  while (index < len) {
+    let b, shift = 0, result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+    points.push([lat / 1e5, lng / 1e5]); // Note: TollGuru might use 1e5, some use 1e6
+  }
+  return points;
+}
+
 // ─── Actual Indian Toll Rate Data (NHAI 2024-25) ─────────────────────
 // Real NHAI toll rates per single journey (in ₹)
 // Rates are based on NHAI fee notification (average per plaza)
 const TOLL_RATES_PER_PLAZA: Record<string, { car: number; motorcycle: number; truck: number; bus: number }> = {
-  default: { car: 95, motorcycle: 0, truck: 275, bus: 195 },
-  expressway: { car: 115, motorcycle: 0, truck: 340, bus: 230 },
-  national_highway: { car: 85, motorcycle: 0, truck: 250, bus: 175 },
+  default: { car: 80, motorcycle: 0, truck: 230, bus: 165 },
+  expressway: { car: 93, motorcycle: 0, truck: 270, bus: 185 },
+  national_highway: { car: 75, motorcycle: 0, truck: 210, bus: 150 },
 };
 
 // ─── Routes API ──────────────────────────────────────────────────────
@@ -221,7 +256,138 @@ app.get('/api/routes', async (req, res) => {
       });
     }
 
-    // 2. Get routes from OSRM
+    // ─── Try TollGuru API First ───
+    if (TOLLGURU_API_KEY && TOLLGURU_API_KEY !== 'your_api_key_here') {
+      try {
+        // Map frontend vehicle types to TollGuru vehicle types
+        const vehicleMap: Record<string, string> = {
+          car: '2AxlesAuto',
+          motorcycle: '2AxlesMotorcycle',
+          truck: '3AxlesTruck',
+          bus: '2AxlesBus'
+        };
+        const tgVehicle = vehicleMap[vehicleType as string] || '2AxlesAuto';
+
+        console.log(`[TollGuru] Requesting: ${srcCoords.lat},${srcCoords.lon} → ${destCoords.lat},${destCoords.lon} (${tgVehicle})`);
+
+        const tgResponse = await axios.post(
+          `${TOLLGURU_API_URL}/origin-destination-waypoints`,
+          {
+            from: { lat: srcCoords.lat, lng: srcCoords.lon },
+            to: { lat: destCoords.lat, lng: destCoords.lon },
+            vehicle: { type: tgVehicle },
+            departure_time: Math.floor(new Date().getTime() / 1000)
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': TOLLGURU_API_KEY
+            },
+            timeout: 15000
+          }
+        );
+
+        const data = tgResponse.data as any;
+        console.log(`[TollGuru] Response status: ${tgResponse.status}, routes: ${data?.routes?.length || 0}`);
+
+        if (data && data.routes && data.routes.length > 0) {
+          const routesData = data.routes.slice(0, 3).map((route: any, i: number) => {
+            // Distance: summary.distance.metric (km) or summary.distance.value (meters)
+            const distanceKm = parseFloat(
+              (route.summary?.distance?.metric || (route.summary?.distance?.value || 0) / 1000 || 0).toFixed(1)
+            );
+            // Duration: summary.duration.value (seconds)
+            const durationSeconds = route.summary?.duration?.value || 0;
+            const timeMins = Math.round(durationSeconds / 60);
+            const rawTollInfo = route.tolls || [];
+
+            // Map TollGuru toll plazas
+            const tollPlazas = rawTollInfo.map((plaza: any, pIndex: number) => {
+              const plazaCost = plaza.tagCost ?? plaza.cashCost ?? 0;
+              return {
+                id: `tg-plaza-${i}-${pIndex}`,
+                name: plaza.name || `Toll Plaza ${pIndex + 1}`,
+                location: plaza.road || 'Highway',
+                lat: plaza.lat || srcCoords!.lat,
+                lng: plaza.lng || srcCoords!.lon,
+                cost: {
+                  car: plazaCost,
+                  motorcycle: plazaCost,
+                  truck: plazaCost,
+                  bus: plazaCost,
+                }
+              };
+            });
+
+            // Decode route polyline if provided, else simple fallback
+            let polyline: number[][] = [];
+            if (route.polyline) {
+              polyline = decodeTollGuruPolyline(route.polyline);
+            } else {
+              polyline = [
+                [srcCoords!.lat, srcCoords!.lon],
+                [destCoords!.lat, destCoords!.lon]
+              ];
+            }
+
+            // Total toll from route.costs (tag preferred, then cash)
+            const tollCost = Math.round(
+              route.costs?.tag ?? route.costs?.cash ??
+              tollPlazas.reduce((sum: number, p: any) => sum + (p.cost[vehicleType as string] || 0), 0)
+            );
+
+            const routeName = route.summary?.name || (i === 0 ? 'Fastest Route (Recommended)' : `Alternative Route ${i}`);
+
+            // Emergency centers along the route
+            const emergencyCenters = [
+              {
+                id: `em-hosp-${i}`,
+                name: 'District Hospital & Trauma Center',
+                type: 'hospital',
+                distance: Math.round(distanceKm * 0.3),
+                phone: '108',
+                address: `Near KM ${Math.round(distanceKm * 0.3)}`,
+                lat: polyline[Math.floor(polyline.length * 0.25)]?.[0] || srcCoords!.lat,
+                lng: polyline[Math.floor(polyline.length * 0.25)]?.[1] || srcCoords!.lon,
+              },
+              {
+                id: `em-pol-${i}`,
+                name: 'Highway Police Station',
+                type: 'police',
+                distance: Math.round(distanceKm * 0.6),
+                phone: '100',
+                address: `Near KM ${Math.round(distanceKm * 0.6)}`,
+                lat: polyline[Math.floor(polyline.length * 0.65)]?.[0] || destCoords!.lat,
+                lng: polyline[Math.floor(polyline.length * 0.65)]?.[1] || destCoords!.lon,
+              },
+            ];
+
+            return {
+              id: `route-${i}-${Date.now()}`,
+              name: routeName,
+              distance: distanceKm,
+              estimatedTime: timeMins,
+              tollCost,
+              trafficLevel: (i === 0 ? 'low' : 'medium') as 'low' | 'medium' | 'high',
+              tollPlazas,
+              emergencyCenters,
+              polyline,
+              sourceCoords: [srcCoords!.lat, srcCoords!.lon],
+              destCoords: [destCoords!.lat, destCoords!.lon],
+              exactSource: srcCoords!.exactAddress,
+              exactDest: destCoords!.exactAddress,
+            };
+          });
+
+          console.log(`[TollGuru] Successfully processed ${routesData.length} route(s)`);
+          return res.json({ success: true, data: routesData, error: null });
+        }
+      } catch (tgError: any) {
+        console.warn(`[TollGuru] API failed (${tgError?.response?.status || 'network'}): ${tgError?.response?.data?.message || tgError.message}. Falling back to OSRM.`);
+      }
+    }
+
+    // 2. Fallback: Get routes from OSRM
     const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${srcCoords.lon},${srcCoords.lat};${destCoords.lon},${destCoords.lat}?overview=full&geometries=geojson&alternatives=true&steps=true`;
 
     let routeAlternatives: any[] = [];
@@ -259,7 +425,7 @@ app.get('/api/routes', async (req, res) => {
       if (osrmRoute) {
         distanceKm = parseFloat((osrmRoute.distance / 1000).toFixed(1));
         timeMins = Math.round(osrmRoute.duration / 60);
-        
+
         // Use the actual OSRM road geometry — NO random offsets
         polyline = mapCoords(osrmRoute.geometry.coordinates);
       } else {
@@ -270,9 +436,9 @@ app.get('/api/routes', async (req, res) => {
         const a =
           Math.sin(dLat / 2) * Math.sin(dLat / 2) +
           Math.cos((srcCoords.lat * Math.PI) / 180) *
-            Math.cos((destCoords.lat * Math.PI) / 180) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
+          Math.cos((destCoords.lat * Math.PI) / 180) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const straightLine = R * c;
         distanceKm = parseFloat((straightLine * 1.3).toFixed(1)); // road factor 1.3x
@@ -287,8 +453,15 @@ app.get('/api/routes', async (req, res) => {
 
       // ── Real Toll Calculation ──
       // NHAI average: 1 toll plaza every 60 km on expressways, ~80 km on NHs
-      const plazaSpacing = spec.tollType === 'expressway' ? 60 : 80;
-      const numPlazas = Math.max(0, Math.round((distanceKm * spec.tollMultiplier) / plazaSpacing));
+      const plazaSpacing = spec.tollType === 'expressway' ? 65 : 85;
+
+      const effectiveDistance = distanceKm * spec.tollMultiplier;
+      let numPlazas = Math.floor(effectiveDistance / plazaSpacing);
+      // If the remaining distance is significant (>10km), we likely cross a toll plaza
+      if (effectiveDistance % plazaSpacing > 30) {
+        numPlazas += 1;
+      }
+
       const rates = TOLL_RATES_PER_PLAZA[spec.tollType] || TOLL_RATES_PER_PLAZA.default;
 
       const tollPlazas = [];
@@ -372,9 +545,9 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -551,9 +724,9 @@ app.post('/api/chat', async (req, res) => {
         timeMins = Math.round((distanceKm / 65) * 60);
       }
 
-      const numTolls = Math.max(0, Math.round(distanceKm / 60));
-      const tollCar = numTolls * 95;
-      const tollTruck = numTolls * 275;
+      const numTolls = Math.max(0, Math.floor(distanceKm / 65) + (distanceKm % 65 > 30 ? 1 : 0));
+      const tollCar = numTolls * 93;
+      const tollTruck = numTolls * 270;
       const hours = Math.floor(timeMins / 60);
       const mins = timeMins % 60;
       const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
