@@ -23,109 +23,65 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// ✅ DEMO USERS
-const mockUsers: Record<string, { password: string; user: User }> = {
-  'traveller@nhms.gov': {
-    password: 'password123',
-    user: {
-      id: '1',
-      name: 'Demo Traveller',
-      email: 'traveller@nhms.gov',
-      role: 'traveller',
-      vehicleNumber: 'MH-01-AB-1234',
-    },
-  },
-  'admin@nhms.gov': {
-    password: 'password123',
-    user: {
-      id: '2',
-      name: 'Demo Admin',
-      email: 'admin@nhms.gov',
-      role: 'admin',
-    },
-  },
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // ✅ Load mockUsers from localStorage on startup
-  const [users, setUsers] = useState<Record<string, { password: string; user: User }>>(() => {
-    const saved = localStorage.getItem('nhms_users')
-    if (saved) {
-      return JSON.parse(saved)
-    }
-    // Return default demo users
-    return {
-      'traveller@nhms.gov': {
-        password: 'password123',
-        user: {
-          id: '1',
-          name: 'Demo Traveller',
-          email: 'traveller@nhms.gov',
-          role: 'traveller',
-          vehicleNumber: 'MH-01-AB-1234',
-        },
-      },
-      'admin@nhms.gov': {
-        password: 'password123',
-        user: {
-          id: '2',
-          name: 'Demo Admin',
-          email: 'admin@nhms.gov',
-          role: 'admin',
-        },
-      },
-    }
-  })
-
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('nhms_user')
     return saved ? JSON.parse(saved) : null
   })
 
-  // ✅ DEMO LOGIN
+  // ✅ REAL LOGIN
   const login = async (email: string, password: string) => {
-    const record = users[email]
-    if (record && record.password === password) {
-      setUser(record.user)
-      localStorage.setItem('nhms_user', JSON.stringify(record.user))
-      return true
+    try {
+      const res = await fetch('http://localhost:3000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      
+      if (data.success && data.token) {
+        setUser(data.user);
+        localStorage.setItem('nhms_user', JSON.stringify(data.user));
+        localStorage.setItem('nhms_token', data.token);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Login Error:', err);
+      return false;
     }
-    return false
   }
 
-  // ✅ DEMO REGISTER
+  // ✅ REAL REGISTER
   const register = async (
     name: string,
     email: string,
     password: string,
     vehicleNumber?: string
   ) => {
-    const newUser: User = {
-      id: Date.now().toString(),
-      name,
-      email,
-      role: 'traveller',
-      vehicleNumber,
+    try {
+      const res = await fetch('http://localhost:3000/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, vehicleNumber }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        return true;
+      }
+      throw new Error(data.message || 'Registration failed');
+    } catch (err: any) {
+      console.error('Register Error:', err);
+      throw err;
     }
-    
-    // ✅ Save to users state and localStorage
-    const updatedUsers = {
-      ...users,
-      [email]: {
-        password: password,
-        user: newUser,
-      },
-    }
-    
-    setUsers(updatedUsers)
-    localStorage.setItem('nhms_users', JSON.stringify(updatedUsers))
-    
-    return true
   }
 
   const logout = () => {
     setUser(null)
     localStorage.removeItem('nhms_user')
+    localStorage.removeItem('nhms_token')
   }
 
   return (

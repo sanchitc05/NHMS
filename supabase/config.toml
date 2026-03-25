@@ -1,4 +1,0 @@
-project_id = "bgrsldcbxzzfntrsqpkg"
-
-[functions.routes-api]
-verify_jwt = false
