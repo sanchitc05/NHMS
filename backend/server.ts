@@ -23,6 +23,14 @@ app.use('/api/auth', authRoutes);
 const TOLLGURU_API_KEY = process.env.TOLLGURU_API_KEY || '';
 const TOLLGURU_API_URL = 'https://apis.tollguru.com/toll/v2';
 
+// Map parameters to vehicle types
+const vehicleMap: Record<string, string> = {
+  car: '2AxlesAuto',
+  motorcycle: '2AxlesMotorcycle',
+  truck: '3AxlesTruck',
+  bus: '2AxlesBus'
+};
+
 // Health check route
 app.get('/', (_req, res) => {
   res.json({ status: 'ok', message: 'NHMS Backend API is running', endpoints: ['/api/routes', '/api/geocode/reverse', '/api/geocode/autocomplete', '/api/chat'] });
@@ -221,12 +229,11 @@ function decodeTollGuruPolyline(encoded: string): number[][] {
 }
 
 // ─── Actual Indian Toll Rate Data (NHAI 2024-25) ─────────────────────
-// Real NHAI toll rates per single journey (in ₹)
-// Rates are based on NHAI fee notification (average per plaza)
-const TOLL_RATES_PER_PLAZA: Record<string, { car: number; motorcycle: number; truck: number; bus: number }> = {
-  default: { car: 80, motorcycle: 0, truck: 230, bus: 165 },
-  expressway: { car: 93, motorcycle: 0, truck: 270, bus: 185 },
-  national_highway: { car: 75, motorcycle: 0, truck: 210, bus: 150 },
+// Real NHAI toll rates per KM (in ₹)
+const TOLL_RATES_PER_KM: Record<string, { car: number; motorcycle: number; truck: number; bus: number }> = {
+  default: { car: 1.65, motorcycle: 0, truck: 4.8, bus: 3.3 }, // Average for mixed roads
+  expressway: { car: 2.65, motorcycle: 0, truck: 8.5, bus: 5.3 }, // Higher rates for expressways
+  national_highway: { car: 1.5, motorcycle: 0, truck: 4.5, bus: 3.0 }, // Standard NH rates
 };
 
 // ─── Routes API ──────────────────────────────────────────────────────
@@ -301,9 +308,9 @@ app.get('/api/routes', async (req, res) => {
         if (data && data.routes && data.routes.length > 0) {
           const routesData = data.routes.slice(0, 3).map((route: any, i: number) => {
             // Distance: summary.distance.metric (km) or summary.distance.value (meters)
-            const distanceKm = parseFloat(
-              (route.summary?.distance?.metric || (route.summary?.distance?.value || 0) / 1000 || 0).toFixed(1)
-            );
+            const rawMetric = route.summary?.distance?.metric;
+            const rawVal = rawMetric ? parseFloat(String(rawMetric)) : (route.summary?.distance?.value ? route.summary.distance.value / 1000 : 0);
+            const distanceKm = parseFloat(Number(rawVal || 0).toFixed(1));
             // Duration: summary.duration.value (seconds)
             const durationSeconds = route.summary?.duration?.value || 0;
             const timeMins = Math.round(durationSeconds / 60);
@@ -411,7 +418,7 @@ app.get('/api/routes', async (req, res) => {
 
     // 3. Build route data — only use REAL OSRM alternatives
     const routeSpecs = [
-      { name: 'Fastest Route (Recommended)', traffic: 'low', tollType: 'expressway', tollMultiplier: 1.0 },
+      { name: 'Fastest Route (Recommended)', traffic: 'low', tollType: 'national_highway', tollMultiplier: 1.0 },
       { name: 'Alternative Route', traffic: 'medium', tollType: 'national_highway', tollMultiplier: 0.85 },
       { name: 'Economical Route (Fewer Tolls)', traffic: 'medium', tollType: 'national_highway', tollMultiplier: 0.5 },
     ];
@@ -460,21 +467,17 @@ app.get('/api/routes', async (req, res) => {
       }
 
       // ── Real Toll Calculation ──
-      // NHAI average: 1 toll plaza every 60 km on expressways, ~80 km on NHs
-      const plazaSpacing = spec.tollType === 'expressway' ? 65 : 85;
-
-      const effectiveDistance = distanceKm * spec.tollMultiplier;
-      let numPlazas = Math.floor(effectiveDistance / plazaSpacing);
-      // If the remaining distance is significant (>10km), we likely cross a toll plaza
-      if (effectiveDistance % plazaSpacing > 30) {
-        numPlazas += 1;
-      }
-
-      const rates = TOLL_RATES_PER_PLAZA[spec.tollType] || TOLL_RATES_PER_PLAZA.default;
+      const rates = TOLL_RATES_PER_KM[spec.tollType] || TOLL_RATES_PER_KM.default;
+      const vType = vehicleType as string;
+      const ratePerKm = (rates as any)[vType] || rates.car;
+      
+      const tollCost = Math.round(distanceKm * ratePerKm * spec.tollMultiplier);
+      const numPlazasSafe = Math.max(1, Math.floor(distanceKm / 75));
+      const costPerPlaza = Math.round(tollCost / numPlazasSafe);
 
       const tollPlazas = [];
-      for (let p = 1; p <= numPlazas; p++) {
-        const fraction = p / (numPlazas + 1);
+      for (let p = 1; p <= numPlazasSafe; p++) {
+        const fraction = p / (numPlazasSafe + 1);
         const polyIndex = Math.min(Math.floor(polyline.length * fraction), polyline.length - 1);
         const coords = polyline[polyIndex] || [srcCoords.lat, srcCoords.lon];
 
@@ -485,17 +488,16 @@ app.get('/api/routes', async (req, res) => {
           lat: coords[0],
           lng: coords[1],
           cost: {
-            car: rates.car,
-            motorcycle: rates.motorcycle,
-            truck: rates.truck,
-            bus: rates.bus,
+            car: costPerPlaza,
+            motorcycle: 0,
+            truck: Math.round((distanceKm * rates.truck) / numPlazasSafe),
+            bus: Math.round((distanceKm * rates.bus) / numPlazasSafe),
           },
         });
       }
 
-      // Total toll = sum of all plazas for chosen vehicle
-      const vType = String(vehicleType) as keyof typeof rates;
-      const tollCost = tollPlazas.reduce((sum, plaza) => sum + (plaza.cost[vType] || 0), 0);
+      // Total toll sum logic handled above in tollCost
+
 
       // Emergency centers along the route
       const emergencyCenters = [
@@ -568,9 +570,9 @@ app.get('/api/nearby-emergency', async (req, res) => {
 
   const userLat = parseFloat(lat as string);
   const userLon = parseFloat(lon as string);
-  
+
   const centers: any[] = [];
-  
+
   // Always include the universal 108 ambulance service first
   centers.push({
     id: 'universal-108',
@@ -596,7 +598,7 @@ app.get('/api/nearby-emergency', async (req, res) => {
         const url = `https://photon.komoot.io/api/?q=${q.q}&lat=${userLat}&lon=${userLon}&limit=3`;
         const photonRes = await axios.get(url, { headers: { 'User-Agent': 'NHMS-Emergency/2.0' }, timeout: 4000 });
         const features = (photonRes.data as any)?.features || [];
-        
+
         for (const f of features) {
           const p = f.properties || {};
           const fLat = f.geometry?.coordinates?.[1];
@@ -673,7 +675,7 @@ app.get('/api/nearby-emergency', async (req, res) => {
       const mLat = userLat + m.latOffset;
       const mLon = userLon + m.lonOffset;
       const dist = haversineKm(userLat, userLon, mLat, mLon);
-      
+
       centers.push({
         id: `local-mock-${Math.random().toString(36).substring(7)}`,
         name: m.name,
@@ -690,7 +692,7 @@ app.get('/api/nearby-emergency', async (req, res) => {
   // Deduplicate by name and proximity to avoid overlapping points from Photon and Mocks
   const uniqueCenters: any[] = [];
   const namesTally = new Set();
-  
+
   for (const c of centers) {
     const isDup = uniqueCenters.some(
       (uc) => Math.abs(uc.lat - c.lat) < 0.002 && Math.abs(uc.lng - c.lng) < 0.002

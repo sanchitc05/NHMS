@@ -1,9 +1,0 @@
-Starting IPv4 direct connection attempt...
-ERROR:
-MongoServerSelectionError: Server selection timed out after 15000 ms
-MongoServerSelectionError: Server selection timed out after 15000 ms
-    at Topology.selectServer (D:\Code\NHMS\backend\node_modules\mongodb\lib\sdam\topology.js:347:38)
-    at async Topology._connect (D:\Code\NHMS\backend\node_modules\mongodb\lib\sdam\topology.js:220:28)
-    at async Topology.connect (D:\Code\NHMS\backend\node_modules\mongodb\lib\sdam\topology.js:171:13)
-    at async topologyConnect (D:\Code\NHMS\backend\node_modules\mongodb\lib\mongo_client.js:258:17)
-    at async MongoClient._connect (D:\Code\NHMS\backend\node_modules\mongodb\lib\mongo_client.js:271:13)
