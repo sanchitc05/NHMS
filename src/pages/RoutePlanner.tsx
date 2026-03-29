@@ -61,6 +61,15 @@ const emergencyIcons: Record<EmergencyCenter['type'], React.ComponentType<{ clas
   fire: Flame,
 };
 
+interface RecentSearch {
+  source: string;
+  sourceCoords: { lat: number; lon: number } | null;
+  destination: string;
+  destCoords: { lat: number; lon: number } | null;
+  vehicleType: VehicleType;
+  timestamp: number;
+}
+
 export default function RoutePlanner() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
@@ -78,6 +87,7 @@ export default function RoutePlanner() {
   const [destCoords, setDestCoords] = useState<{lat: number, lon: number} | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isSimulation, setIsSimulation] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
 
   // Autocomplete hooks
   const { suggestions: sourceSuggestions, isLoading: sourceAutoLoading, clearSuggestions: clearSourceSuggestions } = useAutocomplete(source, showSourceSuggestions);
@@ -116,6 +126,30 @@ export default function RoutePlanner() {
         alert('Could not access your location. Please check your browser permissions.');
       }
     );
+  };
+
+  // Load recent searches from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('nhms_recent_searches');
+    if (saved) {
+      try {
+        setRecentSearches(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load recent searches:', e);
+      }
+    }
+  }, []);
+
+  const saveRecentSearch = (newSearch: RecentSearch) => {
+    setRecentSearches(prev => {
+      // Avoid duplicate entries of the same source/dest
+      const filtered = prev.filter(s => 
+        !(s.source === newSearch.source && s.destination === newSearch.destination)
+      );
+      const updated = [newSearch, ...filtered].slice(0, 5);
+      localStorage.setItem('nhms_recent_searches', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // Use the API hook for fetching routes
@@ -172,6 +206,16 @@ export default function RoutePlanner() {
   const handleSearch = () => {
     if (!source || !destination) return;
     setShouldSearch(true);
+    
+    // Save to recent searches
+    saveRecentSearch({
+      source,
+      sourceCoords,
+      destination,
+      destCoords,
+      vehicleType,
+      timestamp: Date.now()
+    });
   };
 
   // Reset search when inputs change
@@ -426,12 +470,12 @@ export default function RoutePlanner() {
                 )}
 
                 {/* Quick Select */}
-                <div className="pt-4 border-t border-border">
-                  <p className="text-sm text-muted-foreground mb-2">Quick Select:</p>
+                <div className="pt-4 border-t border-border/40">
+                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Quick Select:</p>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full"
+                    className="w-full text-xs h-10 rounded-xl bg-white/40 dark:bg-white/5 border-white/20 hover:border-primary/50"
                     onClick={() => {
                       setSource('Mumbai, Maharashtra');
                       setSourceCoords({ lat: 19.0760, lon: 72.8777 });
@@ -442,9 +486,60 @@ export default function RoutePlanner() {
                     Mumbai → Pune
                   </Button>
                 </div>
+
+                {/* Recent Searches Section */}
+                {recentSearches.length > 0 && (
+                  <div className="pt-6 border-t border-border/60 animate-fade-in">
+                    <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">
+                      <Clock className="w-3 h-3" />
+                      Recent Searches
+                    </div>
+                    <div className="space-y-3">
+                      {recentSearches.map((item, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            setSource(item.source);
+                            setSourceCoords(item.sourceCoords);
+                            setDestination(item.destination);
+                            setDestCoords(item.destCoords);
+                            setVehicleType(item.vehicleType);
+                            setShouldSearch(true);
+                          }}
+                          className="w-full group text-left p-3 rounded-xl bg-white/40 dark:bg-white/5 border border-white/20 hover:border-primary/50 hover:bg-white/80 dark:hover:bg-white/10 transition-all duration-300 shadow-sm hover:shadow-md"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5 overflow-hidden">
+                              <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
+                              <span className="text-xs font-medium text-foreground truncate">{item.source.split(',')[0]}</span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">{new Date(item.timestamp).toLocaleDateString([], {month: 'short', day: 'numeric'})}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 overflow-hidden">
+                            <span className="w-1.5 h-1.5 rounded-full bg-destructive shrink-0" />
+                            <span className="text-xs font-medium text-foreground truncate">{item.destination.split(',')[0]}</span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between">
+                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-bold uppercase tracking-tighter">
+                              {(() => {
+                                const Icon = vehicleIcons[item.vehicleType];
+                                return <Icon className="w-3 h-3" />;
+                              })()}
+                              {vehicleLabels[item.vehicleType]}
+                            </div>
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-primary flex items-center gap-1">
+                              Repeat <Navigation className="w-2 h-2" />
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
+
 
           {/* Results Panel */}
           <div className="lg:col-span-2 space-y-6 animate-slide-up" style={{ animationDelay: '200ms' }}>
