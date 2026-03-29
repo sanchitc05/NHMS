@@ -1,11 +1,12 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import dotenv from 'dotenv';
 import connectDB from './db';
 import authRoutes from './routes/auth';
-
-dotenv.config();
+import { getAIChatResponse } from './services/aiService';
 
 // Connect to MongoDB
 connectDB();
@@ -847,9 +848,16 @@ app.post('/api/chat', async (req, res) => {
   if (!message) return res.status(400).json({ success: false, reply: 'Please provide a message.' });
 
   const msg = String(message).toLowerCase().trim();
+  const history = req.body.history || [];
 
   try {
-    // Route query detection
+    // 1. Try GenAI Response First
+    const aiResponse = await getAIChatResponse(msg, history);
+    if (aiResponse) {
+      return res.json({ success: true, reply: aiResponse });
+    }
+
+    // 2. Legacy Fallback Logic (Regex-based)
     const routeMatch = msg.match(/(?:route|distance|toll|travel|trip|go|how to reach|fare)\s+(?:from\s+)?(.+?)\s+(?:to|->|→)\s+(.+)/i);
     if (routeMatch) {
       const source = routeMatch[1].trim();
@@ -974,7 +982,7 @@ app.post('/api/chat', async (req, res) => {
 
 async function startServer() {
   const server = await app.listen(PORT);
-  console.log(`Backend API Server running at http://localhost:${PORT}`);
+  console.log(`Backend API Server running at http://localhost:${PORT} [v2.2-GenAI-Stabilized]`);
 
   process.on('SIGINT', () => {
     console.log('Shutting down server...');

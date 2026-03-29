@@ -56,7 +56,11 @@ export function Chatbot() {
       const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage }),
+        // Send history for context (last 10 messages max)
+        body: JSON.stringify({ 
+          message: userMessage, 
+          history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })) 
+        }),
       });
       const data = await response.json();
       if (data.success && data.reply) {
@@ -144,7 +148,7 @@ export function Chatbot() {
             <h3 className="text-white font-bold text-sm">NHMS Assistant</h3>
             <p className="text-white/70 text-xs flex items-center gap-1">
               <span className="w-2 h-2 bg-green-400 rounded-full inline-block animate-pulse" />
-              Online — Real Data
+              GenAI Active — Real Data
             </p>
           </div>
         </div>
