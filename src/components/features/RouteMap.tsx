@@ -17,19 +17,20 @@ const createIcon = (color: string, emoji: string) => {
     className: 'custom-marker',
     html: `<div style="
       background-color: ${color};
-      width: 32px;
-      height: 32px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       border: 3px solid white;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      font-size: 24px;
+      line-height: 1;
     ">${emoji}</div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    popupAnchor: [0, -40],
   });
 };
 
@@ -40,6 +41,13 @@ const ambulanceIcon = createIcon('#22c55e', '🚑');
 const fireIcon = createIcon('#dc2626', '🔥');
 const startIcon = createIcon('#22c55e', '🚀');
 const endIcon = createIcon('#ef4444', '🏁');
+
+const vehicleEmojis: Record<string, string> = {
+  car: '🚗',
+  motorcycle: '🏍️',
+  truck: '🚚',
+  bus: '🚌',
+};
 
 const emergencyIcons: Record<EmergencyCenter['type'], L.DivIcon> = {
   hospital: hospitalIcon,
@@ -55,6 +63,9 @@ interface RouteMapProps {
   showAllRoutes?: boolean;
   routes?: Route[];
   className?: string;
+  currentPosition?: [number, number] | null;
+  isNavigating?: boolean;
+  vehicleType?: string;
 }
 
 export function RouteMap({
@@ -62,6 +73,9 @@ export function RouteMap({
   showAllRoutes = false,
   routes = [],
   className = '',
+  currentPosition,
+  isNavigating = false,
+  vehicleType = 'car',
 }: RouteMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -120,20 +134,68 @@ export function RouteMap({
       const coords = route.polyline;
       const isSelected = selectedRoute?.id === route.id;
       
-      const polyline = L.polyline(coords, {
-        color: getRouteColor(route.id, isSelected),
-        weight: isSelected ? 5 : 3,
-        opacity: isSelected ? 1 : 0.6,
-      }).addTo(map);
-      
-      polylinesRef.current.push(polyline);
+      if (isSelected && isNavigating && currentPosition) {
+        // Find split point
+        let closestIdx = 0;
+        let minDist = Infinity;
+        coords.forEach((p, i) => {
+          const d = Math.pow(p[0] - currentPosition[0], 2) + Math.pow(p[1] - currentPosition[1], 2);
+          if (d < minDist) {
+            minDist = d;
+            closestIdx = i;
+          }
+        });
+
+        // Traveled segment (grayish)
+        const traveled = L.polyline(coords.slice(0, closestIdx + 1), {
+          color: '#94a3b8',
+          weight: 5,
+          opacity: 0.6,
+          dashArray: '5, 10'
+        }).addTo(map);
+        
+        // Remaining segment (bold highlight)
+        const remaining = L.polyline(coords.slice(closestIdx), {
+          color: '#3b82f6',
+          weight: 6,
+          opacity: 1,
+        }).addTo(map);
+
+        polylinesRef.current.push(traveled, remaining);
+      } else {
+        const polyline = L.polyline(coords, {
+          color: getRouteColor(route.id, isSelected),
+          weight: isSelected ? 5 : 3,
+          opacity: isSelected ? 1 : 0.6,
+        }).addTo(map);
+        polylinesRef.current.push(polyline);
+      }
+
       if (isSelected || showAllRoutes) {
         allCoords.push(...coords);
       }
     });
 
-    // Add start and end markers based on the first display route 
-    // or selected route
+    // Handle user position marker
+    if (currentPosition) {
+      const emoji = vehicleEmojis[vehicleType] || '🚗';
+      const dynamicUserIcon = createIcon('#3b82f6', emoji);
+      
+      const userMarker = L.marker(currentPosition, { 
+        icon: dynamicUserIcon,
+        zIndexOffset: 1000 
+      })
+      .bindPopup(`<div class="font-semibold text-primary">Your ${vehicleType}</div>`)
+      .addTo(map);
+      markersRef.current.push(userMarker);
+
+      if (isNavigating && currentPosition) {
+        // Smoothly center the map on the user if in navigation mode
+        map.setView(currentPosition, Math.max(map.getZoom(), 15), { animate: true });
+      }
+    }
+
+    // Add start and end point markers
     const mainRoute = selectedRoute || displayRoutes[0];
     if (mainRoute && mainRoute.sourceCoords && mainRoute.destCoords) {
       const startMarker = L.marker(mainRoute.sourceCoords, { icon: startIcon })
@@ -198,12 +260,12 @@ export function RouteMap({
       });
     }
 
-    // Fit bounds to the drawn polylines
-    if (allCoords.length > 0) {
+    // Fit bounds only if not actively navigating (so it doesn't fight auto-center)
+    if (allCoords.length > 0 && !isNavigating) {
       const bounds = L.latLngBounds(allCoords);
       map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [selectedRoute, showAllRoutes, routes, isMapReady]);
+  }, [selectedRoute, showAllRoutes, routes, isMapReady, currentPosition, isNavigating, vehicleType]);
 
   return (
     <div className={`relative rounded-xl overflow-hidden border border-border ${className}`}>

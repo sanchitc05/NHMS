@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { RouteMap } from '@/components/features/RouteMap';
 import { useSearchRoutes, calculateTollCost } from '@/hooks/useRoutes';
 import { useAutocomplete } from '@/hooks/useAutocomplete';
+import { useLiveLocation } from '@/hooks/useLiveLocation';
+import { useNavigationLogic } from '@/hooks/useNavigationLogic';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Play, Square, FastForward, Info } from 'lucide-react';
 
 const vehicleIcons: Record<VehicleType, React.ComponentType<{ className?: string }>> = {
   car: Car,
@@ -69,6 +76,8 @@ export default function RoutePlanner() {
   // Store exact coordinates if selected from autocomplete to avoid re-geocoding errors
   const [sourceCoords, setSourceCoords] = useState<{lat: number, lon: number} | null>(null);
   const [destCoords, setDestCoords] = useState<{lat: number, lon: number} | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [isSimulation, setIsSimulation] = useState(false);
 
   // Autocomplete hooks
   const { suggestions: sourceSuggestions, isLoading: sourceAutoLoading, clearSuggestions: clearSourceSuggestions } = useAutocomplete(source, showSourceSuggestions);
@@ -116,6 +125,27 @@ export default function RoutePlanner() {
     error: apiError,
     isFetched: isApiFetched
   } = useSearchRoutes(source, destination, vehicleType, shouldSearch, sourceCoords, destCoords);
+
+  // Live location & Navigation Logic
+  const { location: liveLocation, startTracking, stopTracking } = useLiveLocation();
+  const { 
+    currentPosition, 
+    distanceRemaining, 
+    distanceTraveled, 
+    progressPercentage, 
+    etaMinutes, 
+    nextMilestone, 
+    isArrived,
+    resetSimulation
+  } = useNavigationLogic(selectedRoute, liveLocation, isSimulation);
+
+  useEffect(() => {
+    if (isNavigating && !isSimulation) {
+      startTracking();
+    } else {
+      stopTracking();
+    }
+  }, [isNavigating, isSimulation, startTracking, stopTracking]);
 
   // Fallback to mock data if API returns empty but NO error occurred
   const routes: Route[] = (() => {
@@ -233,14 +263,19 @@ export default function RoutePlanner() {
               selectedRoute={selectedRoute}
               showAllRoutes={routes.length > 0 && !selectedRoute}
               routes={routes}
-              className="h-[400px]"
+              className="h-[400px] lg:h-[500px]"
+              currentPosition={currentPosition}
+              isNavigating={isNavigating}
+              vehicleType={vehicleType}
             />
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Search Panel */}
-          <div className="lg:col-span-1">
+          {!isNavigating ? (
+            <>
+              {/* Search Panel */}
+              <div className="lg:col-span-1">
             <div className="glass-card sticky top-28 p-6 lg:p-8 animate-slide-up bg-white/40 dark:bg-black/20 shadow-xl border border-white/30 dark:border-white/10">
               <h3 className="font-bold text-xl text-foreground mb-8 flex items-center gap-3 border-b border-border/50 pb-4">
                 <RouteIcon className="w-6 h-6 text-primary" />
@@ -544,7 +579,14 @@ export default function RoutePlanner() {
                           </div>
                         </div>
 
-                        <Button className="w-full" variant="accent">
+                        <Button 
+                          className="w-full" 
+                          variant="accent"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsNavigating(true);
+                          }}
+                        >
                           Start Navigation
                         </Button>
                       </div>
@@ -554,6 +596,151 @@ export default function RoutePlanner() {
               </>
             )}
           </div>
+          </>
+          ) : (
+            /* Navigation Mode Dashboard */
+            <div className="lg:col-span-3 space-y-8 animate-fade-in">
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                {/* Main Navigation Card */}
+                <Card className="lg:col-span-3 p-8 glass-card bg-white/40 dark:bg-black/40 border-primary/20 shadow-2xl overflow-hidden relative">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                    <Navigation className="w-32 h-32 text-primary rotate-45" />
+                  </div>
+                  
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                    <div>
+                      <Badge className="mb-4 px-4 py-1.5 text-sm bg-primary/20 text-primary hover:bg-primary/30 border-primary/30">
+                        Journey in Progress
+                      </Badge>
+                      <h2 className="text-3xl font-extrabold text-foreground tracking-tight">
+                        {selectedRoute?.name}
+                      </h2>
+                      <p className="text-muted-foreground mt-2 flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        Destination: {selectedRoute?.exactDest || 'Arriving soon'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-4 bg-background/50 backdrop-blur-md p-6 rounded-2xl border border-white/20 shadow-inner">
+                      <div className="text-center">
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground font-bold mb-1">Current Speed</p>
+                        <p className="text-5xl font-black text-primary tabular-nums">
+                          {isSimulation ? Math.floor(Math.random() * 10 + 65) : (liveLocation?.speed ? Math.floor(liveLocation.speed * 3.6) : 0)}
+                        </p>
+                        <p className="text-xs font-bold text-muted-foreground">km/h</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-end mb-2">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Distance Remaining</p>
+                        <p className="text-3xl font-bold tabular-nums">{distanceRemaining} km</p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Estimated Arrival</p>
+                        <p className="text-3xl font-bold text-accent tabular-nums flex items-center justify-end gap-2">
+                          <Clock className="w-6 h-6" />
+                          {etaMinutes} min
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="relative h-4 bg-muted/30 rounded-full overflow-hidden border border-white/10 shadow-inner">
+                      <Progress value={progressPercentage} className="h-full bg-gradient-to-r from-primary via-accent to-primary transition-all duration-1000" />
+                    </div>
+                    
+                    <div className="flex justify-between text-xs font-bold text-muted-foreground tracking-widest uppercase pt-2">
+                      <span>{distanceTraveled}KM Traveled</span>
+                      <span>{progressPercentage}% Complete</span>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Status Column */}
+                <div className="lg:col-span-1 space-y-6">
+                  {/* Next Milestone */}
+                  <Card className="p-6 glass-card bg-accent/5 border-accent/20">
+                    <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <Target className="w-4 h-4 text-accent" />
+                      Next Milestone
+                    </h4>
+                    {nextMilestone ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-xl ${
+                            nextMilestone.type === 'toll' ? 'bg-amber-500/20 text-amber-600' : 'bg-red-500/20 text-red-600'
+                          }`}>
+                            {nextMilestone.type === 'toll' ? <IndianRupee className="w-6 h-6" /> : <Hospital className="w-6 h-6" />}
+                          </div>
+                          <div>
+                            <p className="font-bold text-foreground leading-tight">{nextMilestone.name}</p>
+                            <p className="text-sm text-muted-foreground">{nextMilestone.distance.toFixed(1)} km away</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="w-full py-2 justify-center border-accent/30 text-accent">
+                          Approaching Soon
+                        </Badge>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-sm text-muted-foreground italic">No upcoming milestones</p>
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Navigation Controls */}
+                  <Card className="p-6 glass-card border-white/20">
+                    <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-4">Controls</h4>
+                    <div className="space-y-3">
+                      <Button 
+                        variant="destructive" 
+                        className="w-full flex items-center gap-2 h-12 rounded-xl"
+                        onClick={() => setIsNavigating(false)}
+                      >
+                        <Square className="w-4 h-4 fill-current" />
+                        Stop Navigation
+                      </Button>
+                      
+                      <div className="mt-6 pt-6 border-t border-border/50">
+                        <div className="flex items-center justify-between mb-4">
+                          <Label htmlFor="sim-toggle" className="text-sm font-medium">Simulator Mode</Label>
+                          <Button
+                            size="sm"
+                            variant={isSimulation ? "accent" : "outline"}
+                            className="text-xs h-8"
+                            onClick={() => {
+                              if (isSimulation) {
+                                setIsSimulation(false);
+                                resetSimulation();
+                              } else {
+                                setIsSimulation(true);
+                              }
+                            }}
+                          >
+                            {isSimulation ? "Active" : "Enable"}
+                          </Button>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground uppercase leading-relaxed font-bold tracking-tight">
+                          {isSimulation 
+                            ? "Simulating dynamic movement along your selected route" 
+                            : "Uisng real device GPS for positioning and speed data"}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              </div>
+              
+              {isArrived && (
+                <div className="animate-bounce bg-success/10 border border-success/30 p-6 rounded-2xl flex items-center justify-center gap-4 text-success shadow-xl">
+                  <CheckCircle className="w-8 h-8" />
+                  <span className="text-xl font-bold">You have reached your destination!</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </Layout>
