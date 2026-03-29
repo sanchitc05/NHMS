@@ -469,23 +469,7 @@ export default function RoutePlanner() {
                   </p>
                 )}
 
-                {/* Quick Select */}
-                <div className="pt-4 border-t border-border/40">
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Quick Select:</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs h-10 rounded-xl bg-white/40 dark:bg-white/5 border-white/20 hover:border-primary/50"
-                    onClick={() => {
-                      setSource('Mumbai, Maharashtra');
-                      setSourceCoords({ lat: 19.0760, lon: 72.8777 });
-                      setDestination('Pune, Maharashtra');
-                      setDestCoords({ lat: 18.5204, lon: 73.8567 });
-                    }}
-                  >
-                    Mumbai → Pune
-                  </Button>
-                </div>
+
 
                 {/* Recent Searches Section */}
                 {recentSearches.length > 0 && (
