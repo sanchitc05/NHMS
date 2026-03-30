@@ -60,7 +60,7 @@ export default function Register() {
     );
 
     if (success) {
-      navigate('/login');
+      navigate('/dashboard');
     } else {
       setError('Signup failed. Please try again.');
     }

@@ -1,0 +1,47 @@
+{
+  "broadcast": null,
+  "speedLimit": null,
+  "tollOverride": null,
+  "logs": [
+    {
+      "id": "log-1774864503899",
+      "timestamp": 1774864503899,
+      "user": {
+        "name": "piyushshs",
+        "phone": "+91 (Auto-detected)",
+        "email": "72311360@ctuniversity.in"
+      },
+      "lastLocation": "Ludhiana",
+      "searchHistory": "Searched route: Ludhiana to Sirhind",
+      "escalation": {
+        "limitExceeded": "-",
+        "called": "-",
+        "date": "3:25:03 pm",
+        "incidentLocation": "-"
+      }
+    },
+    {
+      "id": "log-1774864480679",
+      "timestamp": 1774864480679,
+      "user": {
+        "name": "piyushshs",
+        "phone": "+91 (Auto-detected)",
+        "email": "72311360@ctuniversity.in"
+      },
+      "lastLocation": "Muzaffarnagar",
+      "searchHistory": "Searched route: Muzaffarnagar to Saharanpur",
+      "escalation": {
+        "limitExceeded": "-",
+        "called": "-",
+        "date": "3:24:40 pm",
+        "incidentLocation": "-"
+      }
+    }
+  ],
+  "broadcastHistory": [
+    {
+      "message": "mhff - Proceed with caution.",
+      "date": "30/3/2026, 3:21:21 pm"
+    }
+  ]
+}

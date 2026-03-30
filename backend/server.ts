@@ -7,6 +7,8 @@ import axios from 'axios';
 import connectDB from './db';
 import authRoutes from './routes/auth';
 import { getAIChatResponse } from './services/aiService';
+import Log from './models/Log';
+import Broadcast from './models/Broadcast';
 
 // Connect to MongoDB
 connectDB();
@@ -16,6 +18,91 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// Global Admin State for Demo
+// Global Admin State for Demo (In-memory cache for speed)
+let globalAdminState = {
+  broadcast: null as { message: string; active: boolean; type: string; time: number } | null,
+  speedLimit: null as number | null,
+  tollOverride: null as { route: string; status: string; time: number } | null,
+  logs: [] as any[], // Real-time user logs cache
+  broadcastHistory: [] as {message: string; date: string}[]
+};
+
+// Initialize Admin Cache from MongoDB
+const syncStateWithDB = async () => {
+    try {
+        const latestLogs = await Log.find().sort({ timestamp: -1 }).limit(100);
+        globalAdminState.logs = latestLogs;
+
+        const latestHistory = await Broadcast.find().sort({ timestamp: -1 }).limit(30);
+        globalAdminState.broadcastHistory = latestHistory as any;
+        
+        const activeAlert = await Broadcast.findOne({ active: true }).sort({ timestamp: -1 });
+        if (activeAlert) {
+            globalAdminState.broadcast = {
+                message: activeAlert.message as string,
+                active: true,
+                type: activeAlert.type as string,
+                time: activeAlert.timestamp as number
+            };
+        } else {
+            globalAdminState.broadcast = null;
+        }
+    } catch (e) {
+        console.error("DB Sync Error:", e);
+    }
+};
+
+app.get('/api/admin/state', async (req, res) => {
+  // Ensure cache is synced (lazy sync or interval works too)
+  await syncStateWithDB();
+  res.json(globalAdminState);
+});
+
+app.post('/api/admin/state', async (req, res) => {
+  // Update memory state
+  if (req.body.broadcast !== undefined) globalAdminState.broadcast = req.body.broadcast;
+  if (req.body.speedLimit !== undefined) globalAdminState.speedLimit = req.body.speedLimit;
+  if (req.body.tollOverride !== undefined) globalAdminState.tollOverride = req.body.tollOverride;
+  
+  // Persist to MongoDB if it's a new broadcast
+  if (req.body.broadcast && req.body.broadcast.active) {
+    const newBroadcast = new Broadcast({
+      message: req.body.broadcast.message,
+      date: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      type: req.body.broadcast.type,
+      active: true,
+      timestamp: Date.now()
+    });
+    await newBroadcast.save();
+    console.log(`[DB] New broadcast saved to MongoDB`);
+  } else if (req.body.broadcast === null) {
+      // Dismiss active broadcast
+      await Broadcast.updateMany({ active: true }, { active: false });
+  }
+
+  res.json({ success: true, state: globalAdminState });
+});
+
+// Endpoint specifically to push a new activity log
+app.post('/api/admin/logs', async (req, res) => {
+  try {
+    const newLog = new Log({
+        ...req.body,
+        timestamp: Date.now()
+    });
+    await newLog.save();
+    
+    // Add to memory cache
+    globalAdminState.logs.unshift(newLog);
+    if (globalAdminState.logs.length > 200) globalAdminState.logs.pop();
+    
+    res.json({ success: true, log: newLog });
+  } catch (e) {
+      res.status(500).json({ error: "Failed to persist log" });
+  }
+});
 
 // Routes
 app.use('/api/auth', authRoutes);

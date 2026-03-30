@@ -47,7 +47,7 @@ const firstAidIcons: Record<string, React.ComponentType<{ className?: string }>>
 
 export default function Emergency() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [micActive, setMicActive] = useState(false);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'no-answer' | 'message-sent'>('idle');
 
@@ -100,6 +100,25 @@ export default function Emergency() {
     setCallStatus('calling');
     toast.info('Dialing 1033...', { description: 'Connecting to highway helpline...' });
     
+    // Log to Admin Dashboard
+    try {
+      fetch('http://localhost:3000/api/admin/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user: { name: user?.name || 'Anonymous User', phone: '+91 (Auto-detected)', email: user?.email || 'N/A' },
+          lastLocation: 'GPS Location (Live)',
+          searchHistory: 'Emergency SOS Activated — Dialed 1033',
+          escalation: {
+            limitExceeded: '-',
+            called: 'Highway Helpline 1033 (Manual SOS)',
+            date: new Date().toLocaleTimeString(),
+            incidentLocation: 'User GPS Coordinates'
+          }
+        })
+      });
+    } catch(e) {}
+
     // Init call
     window.location.href = 'tel:1033';
     

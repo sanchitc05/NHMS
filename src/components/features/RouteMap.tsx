@@ -66,6 +66,7 @@ interface RouteMapProps {
   currentPosition?: [number, number] | null;
   isNavigating?: boolean;
   vehicleType?: string;
+  patrolUnits?: any[];
 }
 
 export function RouteMap({
@@ -76,6 +77,7 @@ export function RouteMap({
   currentPosition,
   isNavigating = false,
   vehicleType = 'car',
+  patrolUnits = [],
 }: RouteMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -259,6 +261,18 @@ export function RouteMap({
         markersRef.current.push(marker);
       });
     }
+    // Add patrol unit markers
+    patrolUnits.forEach((unit) => {
+      if (!unit.pos) return;
+      const patrolIcon = createIcon('#3b82f6', '🚓');
+      const marker = L.marker(unit.pos, { 
+        icon: patrolIcon,
+        zIndexOffset: 800 
+      })
+      .bindPopup(`<div class="font-bold text-primary">Patrol Unit ${unit.id}</div><div class="text-xs">Live Tracking Active</div>`)
+      .addTo(map);
+      markersRef.current.push(marker);
+    });
 
     // Fit bounds only if not actively navigating (so it doesn't fight auto-center)
     if (allCoords.length > 0 && !isNavigating) {

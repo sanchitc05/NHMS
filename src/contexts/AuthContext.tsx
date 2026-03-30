@@ -11,7 +11,7 @@ interface User {
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
-  login: (email: string, password: string) => Promise<boolean>
+  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>
   register: (
     name: string,
     email: string,
@@ -44,12 +44,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user);
         localStorage.setItem('nhms_user', JSON.stringify(data.user));
         localStorage.setItem('nhms_token', data.token);
-        return true;
+        return { success: true };
       }
-      return false;
-    } catch (err) {
+      return { success: false, message: data.message };
+    } catch (err: any) {
       console.error('Login Error:', err);
-      return false;
+      return { success: false, message: err.message || 'Login failed' };
     }
   }
 
@@ -68,7 +68,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       const data = await res.json();
       
-      if (data.success) {
+      if (data.success && data.token) {
+        setUser(data.user);
+        localStorage.setItem('nhms_user', JSON.stringify(data.user));
+        localStorage.setItem('nhms_token', data.token);
         return true;
       }
       throw new Error(data.message || 'Registration failed');

@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Car, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
+import { useEffect } from 'react';
+
 export default function Login() {
-  const { login } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,27 +17,35 @@ export default function Login() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
-   const success = await login(email, password);
+      const result = await login(email, password);
 
-if (success) {
-  navigate('/dashboard');
-} else {
-  setError('Invalid credentials. Please try again.');
-}
-    } catch (err) {
-      setError('Login failed. Please try again.');
+      if (!result.success) {
+        setError(result.message || 'Invalid credentials. Please try again.');
+      }
+      // Note: redirection is now handled by the useEffect above
+    } catch (err: any) {
+      setError(err?.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  
   return (
     <div className="min-h-screen flex bg-background">
       {/* Left Panel - Decorative */}
@@ -136,9 +146,10 @@ if (success) {
             </Button>
 
             {/* Demo Credentials */}
-            <div className="text-center text-sm text-muted-foreground bg-muted p-4 rounded-lg">
+            <div className="text-center text-sm text-muted-foreground bg-muted p-4 rounded-lg space-y-2">
               <p className="font-medium mb-1">Demo Credentials</p>
-              <p>Email: traveller@nhms.gov / Password: password123</p>
+              <p>User: traveller@nhms.gov / password123</p>
+              <p>Admin: admin@nhms.com / admin123</p>
             </div>
 
             {/* Register Link */}

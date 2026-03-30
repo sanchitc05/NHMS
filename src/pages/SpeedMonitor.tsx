@@ -129,6 +129,34 @@ export default function SpeedMonitor() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const warningTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // Refs for logging to avoid useCallback dependency thrashing
+  const latestSpeedRef = useRef(0);
+  const latestLimitRef = useRef(120);
+  const latestRoadRef = useRef('');
+
+  // Global override state
+  const [globalSpeedOverride, setGlobalSpeedOverride] = useState<number | null>(null);
+
+  useEffect(() => {
+    const pollState = async () => {
+      try {
+        const res = await fetch('http://localhost:3000/api/admin/state');
+        const data = await res.json();
+        if (data.speedLimit) {
+          setGlobalSpeedOverride(data.speedLimit);
+        } else {
+          setGlobalSpeedOverride(null);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    
+    pollState();
+    const interval = setInterval(pollState, 1500); // Super fast realtime polling for demo
+    return () => clearInterval(interval);
+  }, []);
 
   const {
     location: liveLocation,
@@ -140,7 +168,8 @@ export default function SpeedMonitor() {
   } = useLiveLocation();
 
   // Derived speed limit
-  const currentSpeedLimit = speedData.speedLimit;
+  const baseLimit = globalSpeedOverride !== null ? globalSpeedOverride : speedData.speedLimit;
+  const currentSpeedLimit = baseLimit;
 
   // Get speed from GPS or simulation
   const displaySpeed =
@@ -149,6 +178,13 @@ export default function SpeedMonitor() {
       : speedData.currentSpeed;
 
   const isCurrentlyOverspeeding = displaySpeed > currentSpeedLimit;
+
+  // Update refs
+  useEffect(() => {
+    latestSpeedRef.current = displaySpeed;
+    latestLimitRef.current = currentSpeedLimit;
+    latestRoadRef.current = roadName;
+  }, [displaySpeed, currentSpeedLimit, roadName]);
 
   // ── Audio Warning System ───────────────────────────────────────
   const playWarningBeep = useCallback(
@@ -206,11 +242,30 @@ export default function SpeedMonitor() {
     setEmergencyCallTriggered(true);
     setShowEmergencyDialog(true);
 
+    // Send Real-time log to Admin Dashboard
+    try {
+      fetch('http://localhost:3000/api/admin/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user: { name: user?.name || 'Local User', phone: '+91 (Auto-detected)', email: user?.email || 'N/A' },
+          lastLocation: latestRoadRef.current,
+          searchHistory: "Active Driving Mode",
+          escalation: {
+            limitExceeded: `${latestSpeedRef.current} km/h (Limit: ${latestLimitRef.current})`,
+            called: "Highway Patrol & 1033",
+            date: new Date().toLocaleTimeString(),
+            incidentLocation: latestRoadRef.current
+          }
+        })
+      });
+    } catch(e) {}
+
     // Attempt to initiate the phone call via tel: URI
     setTimeout(() => {
       window.location.href = 'tel:1033';
     }, 1500);
-  }, [emergencyCallTriggered]);
+  }, [emergencyCallTriggered, user]);
 
   // ── Warning Escalation Logic ───────────────────────────────────
   useEffect(() => {
@@ -735,7 +790,8 @@ export default function SpeedMonitor() {
                   <div className="flex justify-between text-sm mb-3">
                     <span className="text-muted-foreground font-medium">Current Speed</span>
                     <span className="font-bold text-foreground">
-                      Limit: {currentSpeedLimit} km/h ({vehicleLabels[vehicleType]})
+                      Limit: {currentSpeedLimit} km/h 
+                      {globalSpeedOverride ? " (ADMIN OVERRIDE)" : ` (${vehicleLabels[vehicleType]})`}
                     </span>
                   </div>
                   <div className="relative h-4 bg-muted rounded-full overflow-hidden">

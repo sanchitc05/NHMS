@@ -72,7 +72,7 @@ interface RecentSearch {
 
 export default function RoutePlanner() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [source, setSource] = useState('');
   const [destination, setDestination] = useState('');
   const [vehicleType, setVehicleType] = useState<VehicleType>('car');
@@ -216,6 +216,25 @@ export default function RoutePlanner() {
       vehicleType,
       timestamp: Date.now()
     });
+
+    // Send Real-time log to Admin Dashboard
+    try {
+      fetch('http://localhost:3000/api/admin/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user: { name: user?.name || 'Local User', phone: '+91 (Auto-detected)', email: user?.email || 'N/A' },
+          lastLocation: source.split(',')[0],
+          searchHistory: `Searched route: ${source.split(',')[0]} to ${destination.split(',')[0]}`,
+          escalation: {
+            limitExceeded: "-",
+            called: "-",
+            date: new Date().toLocaleTimeString(),
+            incidentLocation: "-"
+          }
+        })
+      });
+    } catch(e) {}
   };
 
   // Reset search when inputs change

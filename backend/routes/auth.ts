@@ -16,7 +16,8 @@ router.post('/register', async (req, res) => {
     });
   }
 
-  const { name, email, password, role, vehicleNumber } = req.body;
+  let { name, email, password, role, vehicleNumber } = req.body;
+  email = email?.toLowerCase().trim();
 
   try {
     // Check if user already exists
@@ -77,6 +78,24 @@ router.post('/register', async (req, res) => {
 
 // Login
 router.post('/login', async (req, res) => {
+  let { email, password } = req.body;
+  email = email?.toLowerCase().trim();
+
+  // Hardcoded Admin Login
+  if (email === 'admin@nhms.com' && password === 'admin123') {
+    return res.json({
+      success: true,
+      token: 'admin-mock-token-xyz',
+      user: {
+        id: 'admin_001',
+        name: 'System Administrator',
+        email: 'admin@nhms.com',
+        role: 'admin',
+        vehicleNumber: 'ADMIN-001'
+      }
+    });
+  }
+
   // Check if DB is connected
   if (mongoose.connection.readyState !== 1) {
     return res.status(500).json({ 
@@ -84,8 +103,6 @@ router.post('/login', async (req, res) => {
       message: 'Database connection failed. Please log into MongoDB Atlas and whitelist your current IP address.' 
     });
   }
-
-  const { email, password } = req.body;
 
   try {
     // Check if user exists
@@ -128,6 +145,20 @@ router.post('/login', async (req, res) => {
     );
   } catch (err: any) {
     console.error('Login Error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Admin: Get all users
+router.get('/users', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+       return res.status(500).json({ success: false, message: 'DB not connected' });
+    }
+    const users = await User.find({}, '-password').sort({ createdAt: -1 });
+    res.json({ success: true, users });
+  } catch (err: any) {
+    console.error('Fetch Users Error:', err.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
