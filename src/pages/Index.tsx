@@ -15,7 +15,6 @@ import {
   Linkedin,
   Instagram,
   Mail,
-  User,
 } from 'lucide-react';
 
 const features = [
@@ -228,9 +227,9 @@ export default function Index() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-10 max-w-5xl mx-auto">
+          <div className="max-w-3xl mx-auto">
             {/* Social Links */}
-            <div className="glass-card bg-white/40 dark:bg-black/20 p-8 flex flex-col items-center text-center hover:border-primary/50 transition-all duration-300 group">
+            <div className="glass-card bg-white/40 dark:bg-black/20 p-10 flex flex-col items-center text-center hover:border-primary/50 transition-all duration-300 group shadow-xl">
               <h3 className="text-2xl font-bold mb-8 text-foreground group-hover:text-primary transition-colors">Connect with Us</h3>
               <div className="flex flex-wrap justify-center gap-6">
                 <a href="#" className="flex flex-col items-center gap-3 p-4 rounded-xl hover:bg-muted/80 transition-all hover:scale-105 hover:text-blue-600">
@@ -260,34 +259,6 @@ export default function Index() {
               </div>
             </div>
 
-            {/* Contact Persons */}
-            <div className="glass-card bg-white/40 dark:bg-black/20 p-8 hover:border-accent/50 transition-all duration-300 group">
-              <h3 className="text-2xl font-bold mb-8 text-foreground text-center group-hover:text-accent transition-colors">Team Points of Contact</h3>
-              <div className="space-y-4">
-                {[
-                  { name: 'Aarna Garg', role: 'Team Member', phone: '+91 93684 10466' },
-                  { name: 'Garima Singh', role: 'Team Member', phone: '+91 76960 33864' },
-                  { name: 'Kirti', role: 'Team Member', phone: '+91 85275 03823' },
-                  { name: 'Akilah', role: 'Team Member', phone: '+91 90582 02922' },
-                ].map((person, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-4 rounded-xl bg-background/50 hover:bg-muted transition-colors border border-border/50 hover:border-accent/30">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent">
-                        <User className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-foreground">{person.name}</h4>
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider">{person.role}</p>
-                      </div>
-                    </div>
-                    <a href={`tel:${person.phone}`} className="flex items-center gap-2 text-primary hover:text-primary/80 font-bold bg-primary/10 px-3 py-2 rounded-lg transition-all hover:bg-primary/20">
-                      <Phone className="w-4 h-4" />
-                      <span>{person.phone}</span>
-                    </a>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </section>
