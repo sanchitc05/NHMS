@@ -24,11 +24,8 @@
     "mongodb": "^7.1.1",
     "mongodb-memory-server": "^11.0.1",
     "mongoose": "^9.3.2",
-<<<<<<< HEAD
-    "vite": "^7.3.1"
-=======
+    "vite": "^7.3.1",
     "nodemailer": "^8.0.4"
->>>>>>> db92e4cfb5c5eef893711c49e81f01a12ff5f9cd
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

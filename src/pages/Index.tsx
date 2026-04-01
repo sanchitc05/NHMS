@@ -79,8 +79,8 @@ export default function Index() {
               <span>Next-Gen Highway Intelligence</span>
             </div>
             
-            <h1 className="text-5xl md:text-7xl font-extrabold text-foreground mb-6 leading-tight tracking-tight">
-              National Highway <br />
+            <h1 className="text-5xl md:text-7xl font-extrabold mb-6 leading-tight tracking-tight">
+              <span className="text-gradient font-black">National Highway</span> <br />
               <span className="text-gradient font-black">Management System</span>
             </h1>
             
