@@ -203,4 +203,61 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// Update user profile
+router.put('/profile/:id', async (req, res) => {
+  try {
+    const { name, email, phone, vehicleNumber } = req.body;
+    const updateData: any = {};
+    if (name) updateData.name = name;
+    if (email) updateData.email = email.toLowerCase().trim();
+    if (phone !== undefined) updateData.phone = phone;
+    if (vehicleNumber !== undefined) updateData.vehicleNumber = vehicleNumber;
+    
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true, select: '-password' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    
+    res.json({ success: true, user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      phone: (user as any).phone || '',
+      vehicleNumber: user.vehicleNumber
+    }});
+  } catch (err: any) {
+    console.error('Update Profile Error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Admin: Delete user
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (err: any) {
+    console.error('Delete User Error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Admin: Edit user (role, name, vehicle)
+router.put('/users/:id', async (req, res) => {
+  try {
+    const { name, role, vehicleNumber } = req.body;
+    const updateData: any = {};
+    if (name) updateData.name = name;
+    if (role) updateData.role = role;
+    if (vehicleNumber !== undefined) updateData.vehicleNumber = vehicleNumber;
+    
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true, select: '-password' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.json({ success: true, user });
+  } catch (err: any) {
+    console.error('Edit User Error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 export default router;
