@@ -871,61 +871,7 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Live Patrol & Rescue Units Section */}
-            <div className="gov-card border-t-4 border-t-accent shadow-xl bg-gradient-to-br from-background to-accent/5">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                    <Activity className="w-6 h-6 text-accent animate-pulse" />
-                    Live Highway Patrol & Rescue Units
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">Real-time GPS deployment tracking of emergency units</p>
-                </div>
-                <Badge className="bg-accent/10 text-accent border-accent/30 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
-                  14 Units Active
-                </Badge>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {patrolUnits.map((unit) => (
-                  <div key={unit.id} className="p-5 bg-card border border-border rounded-2xl hover:shadow-lg transition-all group relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 rounded-full -mr-12 -mt-12 transition-transform group-hover:scale-150" />
-                    <div className="flex justify-between items-start mb-4 relative z-10">
-                      <div className="p-2 bg-accent/10 rounded-lg">
-                        {unit.type.includes('Patrol') ? <Shield className="w-5 h-5 text-accent" /> : unit.type.includes('Life') ? <Hospital className="w-5 h-5 text-destructive" /> : <Car className="w-5 h-5 text-primary" />}
-                      </div>
-                      <Badge variant="outline" className={
-                        unit.status === 'Responding' ? 'bg-destructive/10 text-destructive border-destructive/30 animate-pulse' : 
-                        unit.status === 'On Patrol' ? 'bg-success/10 text-success border-success/30' : 
-                        'bg-muted/50 text-muted-foreground'
-                      }>
-                        {unit.status}
-                      </Badge>
-                    </div>
-                    <div className="relative z-10">
-                      <p className="text-xs text-muted-foreground font-mono mb-1">{unit.id}</p>
-                      <h4 className="font-bold text-foreground text-lg mb-1">{unit.type}</h4>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                        <MapPin className="w-3 h-3 text-accent" />
-                        {unit.location}
-                      </div>
-                      <div className="pt-3 border-t border-border/50 flex justify-between items-center text-xs">
-                        <span className="font-medium text-foreground">{unit.crew}</span>
-                        <div className="flex items-center gap-1">
-                          <div className={`w-2 h-2 rounded-full ${unit.health === 'Healthy' ? 'bg-success' : 'bg-destructive'}`} />
-                          {unit.health}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-8 p-4 bg-muted/30 rounded-xl border border-dashed border-border flex items-center justify-center gap-4 text-sm text-muted-foreground">
-                <Info className="w-4 h-4" />
-                Click on any unit to initiate direct encrypted VOIP communication or reroute assignment.
-              </div>
-            </div>
           </TabsContent>
         </Tabs>
       </div>
