@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,7 +34,7 @@ import { EmergencyAlert } from '@/types';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Trash2, Edit2, Move, AlertOctagon, Info, FileDown, Eye, X, Save, Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+// useEffect and useRef imported at the top
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -55,13 +55,34 @@ export default function Admin() {
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isAiTriageEnabled, setIsAiTriageEnabled] = useState(false);
 
-  // Edit/Delete user states
+  // Edit user states
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ name: '', role: '', vehicleNumber: '' });
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [deletingUser, setDeletingUser] = useState<any>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Undo Delete states
+  const [recentlyDeletedUser, setRecentlyDeletedUser] = useState<{user: any, index: number} | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const deletedUserRef = useRef<{user: any, index: number} | null>(null);
+
+  // Keep ref synced for unmount cleanup
+  useEffect(() => {
+    deletedUserRef.current = recentlyDeletedUser;
+  }, [recentlyDeletedUser]);
+
+  useEffect(() => {
+    return () => {
+      // Clear timeout and commit deletion on unmount to prevent leaks
+      if (timeoutRef.current && deletedUserRef.current) {
+        clearTimeout(timeoutRef.current);
+        fetch(`http://localhost:3000/api/auth/users/${deletedUserRef.current.user._id}`, { 
+          method: 'DELETE', 
+          keepalive: true 
+        }).catch(console.error);
+      }
+    };
+  }, []);
 
   // System health real-time state
   const [systemHealth, setSystemHealth] = useState<any>(null);
@@ -109,23 +130,89 @@ export default function Admin() {
   };
 
   // Delete user handler
-  const handleDeleteUser = async (userId: string) => {
+  const commitDeleteUser = async (userId: string) => {
     try {
       const res = await fetch(`http://localhost:3000/api/auth/users/${userId}`, {
         method: 'DELETE',
       });
       const data = await res.json();
-      if (data.success) {
-        setUsers(prev => prev.filter(u => u._id !== userId));
-        toast.success('User deleted successfully');
-        setIsDeleteDialogOpen(false);
-        setDeletingUser(null);
-      } else {
-        toast.error(data.message || 'Failed to delete user');
+      if (!data.success) {
+        toast.error(data.message || 'Failed to delete user permanently');
       }
     } catch (e) {
-      toast.error('Failed to delete user');
+      toast.error('Failed to connect to server during deletion');
     }
+  };
+
+  const handleUndoDelete = (deletedUserId: string) => {
+    const deletedInfo = deletedUserRef.current;
+    if (!deletedInfo || deletedInfo.user._id !== deletedUserId) {
+        return; // Mismatch or already committed
+    }
+
+    // Clear the timeout to prevent permanent deletion
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
+    setRecentlyDeletedUser(null);
+    deletedUserRef.current = null;
+    
+    // Restore user optimistically at the original index
+    setUsers(prev => {
+      // Only restore if not already restored
+      if (prev.some(user => user._id === deletedInfo.user._id)) return prev;
+      const newUsers = [...prev];
+      // Splice back in original position, fallback to push if index invalid
+      if (deletedInfo.index >= 0 && deletedInfo.index <= newUsers.length) {
+        newUsers.splice(deletedInfo.index, 0, deletedInfo.user);
+      } else {
+        newUsers.push(deletedInfo.user);
+      }
+      return newUsers;
+    });
+    
+    toast.success('Action undone');
+  };
+
+  const initiateDeleteUser = (u: any) => {
+    // If another deletion is pending, commit it immediately
+    if (timeoutRef.current && deletedUserRef.current) {
+      commitDeleteUser(deletedUserRef.current.user._id);
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    // Optimistically remove from UI and capture index
+    setUsers(prev => {
+      const index = prev.findIndex(user => user._id === u._id);
+      
+      const deletedInfo = { user: u, index };
+      setRecentlyDeletedUser(deletedInfo);
+      deletedUserRef.current = deletedInfo;
+      
+      return prev.filter((_, i) => i !== index);
+    });
+
+    // Show custom toast with action
+    toast('User deleted', {
+      duration: 5000,
+      action: {
+        label: 'UNDO',
+        onClick: () => handleUndoDelete(u._id)
+      }
+    });
+
+    // Schedule permanent deletion
+    const timeoutId = setTimeout(() => {
+      commitDeleteUser(u._id);
+      setRecentlyDeletedUser(null);
+      deletedUserRef.current = null;
+      timeoutRef.current = null;
+    }, 5000);
+
+    timeoutRef.current = timeoutId;
   };
 
   // Edit user handler
@@ -158,11 +245,6 @@ export default function Admin() {
     setEditingUser(u);
     setEditForm({ name: u.name || '', role: u.role || 'traveller', vehicleNumber: u.vehicleNumber || '' });
     setIsEditDialogOpen(true);
-  };
-
-  const openDeleteDialog = (u: any) => {
-    setDeletingUser(u);
-    setIsDeleteDialogOpen(true);
   };
 
   if (!isAuthenticated || user?.role !== 'admin') {
@@ -637,7 +719,7 @@ export default function Admin() {
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                onClick={() => openDeleteDialog(u)}
+                                onClick={() => initiateDeleteUser(u)}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -685,35 +767,6 @@ export default function Admin() {
                     <Button className="flex-1 gap-2" onClick={handleEditUser} disabled={isSavingEdit}>
                       {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       {isSavingEdit ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            {/* Delete Confirm Dialog */}
-            <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-              <DialogContent className="max-w-sm">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2 text-destructive">
-                    <Trash2 className="w-5 h-5" />
-                    Delete User
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="mt-4">
-                  <p className="text-sm text-muted-foreground mb-2">Are you sure you want to delete this user?</p>
-                  {deletingUser && (
-                    <div className="p-3 bg-muted/50 rounded-lg border border-border mb-4">
-                      <p className="font-semibold">{deletingUser.name}</p>
-                      <p className="text-xs text-muted-foreground">{deletingUser.email}</p>
-                    </div>
-                  )}
-                  <p className="text-xs text-destructive font-medium mb-4">This action cannot be undone.</p>
-                  <div className="flex gap-3">
-                    <Button variant="outline" className="flex-1" onClick={() => setIsDeleteDialogOpen(false)}>Cancel</Button>
-                    <Button variant="destructive" className="flex-1 gap-2" onClick={() => deletingUser && handleDeleteUser(deletingUser._id)}>
-                      <Trash2 className="w-4 h-4" />
-                      Delete
                     </Button>
                   </div>
                 </div>
@@ -871,61 +924,7 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Live Patrol & Rescue Units Section */}
-            <div className="gov-card border-t-4 border-t-accent shadow-xl bg-gradient-to-br from-background to-accent/5">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                    <Activity className="w-6 h-6 text-accent animate-pulse" />
-                    Live Highway Patrol & Rescue Units
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">Real-time GPS deployment tracking of emergency units</p>
-                </div>
-                <Badge className="bg-accent/10 text-accent border-accent/30 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
-                  14 Units Active
-                </Badge>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {patrolUnits.map((unit) => (
-                  <div key={unit.id} className="p-5 bg-card border border-border rounded-2xl hover:shadow-lg transition-all group relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 rounded-full -mr-12 -mt-12 transition-transform group-hover:scale-150" />
-                    <div className="flex justify-between items-start mb-4 relative z-10">
-                      <div className="p-2 bg-accent/10 rounded-lg">
-                        {unit.type.includes('Patrol') ? <Shield className="w-5 h-5 text-accent" /> : unit.type.includes('Life') ? <Hospital className="w-5 h-5 text-destructive" /> : <Car className="w-5 h-5 text-primary" />}
-                      </div>
-                      <Badge variant="outline" className={
-                        unit.status === 'Responding' ? 'bg-destructive/10 text-destructive border-destructive/30 animate-pulse' : 
-                        unit.status === 'On Patrol' ? 'bg-success/10 text-success border-success/30' : 
-                        'bg-muted/50 text-muted-foreground'
-                      }>
-                        {unit.status}
-                      </Badge>
-                    </div>
-                    <div className="relative z-10">
-                      <p className="text-xs text-muted-foreground font-mono mb-1">{unit.id}</p>
-                      <h4 className="font-bold text-foreground text-lg mb-1">{unit.type}</h4>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                        <MapPin className="w-3 h-3 text-accent" />
-                        {unit.location}
-                      </div>
-                      <div className="pt-3 border-t border-border/50 flex justify-between items-center text-xs">
-                        <span className="font-medium text-foreground">{unit.crew}</span>
-                        <div className="flex items-center gap-1">
-                          <div className={`w-2 h-2 rounded-full ${unit.health === 'Healthy' ? 'bg-success' : 'bg-destructive'}`} />
-                          {unit.health}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-8 p-4 bg-muted/30 rounded-xl border border-dashed border-border flex items-center justify-center gap-4 text-sm text-muted-foreground">
-                <Info className="w-4 h-4" />
-                Click on any unit to initiate direct encrypted VOIP communication or reroute assignment.
-              </div>
-            </div>
           </TabsContent>
         </Tabs>
       </div>
