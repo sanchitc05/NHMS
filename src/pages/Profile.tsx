@@ -6,17 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { User, Car, Phone, Mail, Shield, Save, ArrowLeft } from 'lucide-react';
+import { User, Car, Phone, Mail, Shield, Save, ArrowLeft, Loader2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, updateUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    phone: '',
+    phone: user?.phone || '',
     vehicleNumber: user?.vehicleNumber || '',
   });
 
@@ -24,9 +25,37 @@ export default function Profile() {
     return <Navigate to="/login" replace />;
   }
 
-  const handleSave = () => {
-    // In a real app, this would save to the database
-    toast.success('Profile updated successfully!');
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const result = await updateUser({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        vehicleNumber: formData.vehicleNumber,
+      } as any);
+      
+      if (result.success) {
+        toast.success('Profile updated successfully!');
+        setIsEditing(false);
+      } else {
+        toast.error(result.message || 'Failed to update profile');
+      }
+    } catch (err) {
+      toast.error('Failed to update profile. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    // Reset form to current user data
+    setFormData({
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: user?.phone || '',
+      vehicleNumber: user?.vehicleNumber || '',
+    });
     setIsEditing(false);
   };
 
@@ -93,7 +122,7 @@ export default function Profile() {
                 </div>
                 <Button 
                   variant={isEditing ? "outline" : "default"}
-                  onClick={() => setIsEditing(!isEditing)}
+                  onClick={() => isEditing ? handleCancel() : setIsEditing(true)}
                 >
                   {isEditing ? 'Cancel' : 'Edit Profile'}
                 </Button>
@@ -144,9 +173,10 @@ export default function Profile() {
                       id="phone"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="Enter your phone number"
                     />
                   ) : (
-                    <p className="text-foreground font-medium py-2">{formData.phone || 'Not provided'}</p>
+                    <p className="text-foreground font-medium py-2">{user?.phone || formData.phone || 'Not provided'}</p>
                   )}
                 </div>
 
@@ -160,6 +190,7 @@ export default function Profile() {
                       id="vehicle"
                       value={formData.vehicleNumber}
                       onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
+                      placeholder="e.g. DL-01-AB-1234"
                     />
                   ) : (
                     <p className="text-foreground font-medium py-2">{user?.vehicleNumber || 'Not provided'}</p>
@@ -169,9 +200,18 @@ export default function Profile() {
 
               {isEditing && (
                 <div className="flex justify-end pt-4 border-t">
-                  <Button onClick={handleSave} className="gap-2">
-                    <Save className="w-4 h-4" />
-                    Save Changes
+                  <Button onClick={handleSave} className="gap-2" disabled={isSaving}>
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save Changes
+                      </>
+                    )}
                   </Button>
                 </div>
               )}

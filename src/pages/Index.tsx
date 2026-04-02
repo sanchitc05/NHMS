@@ -12,9 +12,6 @@ import {
   Phone,
   ShieldCheck,
   Zap,
-  Linkedin,
-  Instagram,
-  Mail,
 } from 'lucide-react';
 
 const features = [
@@ -218,47 +215,13 @@ export default function Index() {
       <section className="py-24 bg-background relative" id="contact">
         <div className="absolute inset-0 bg-grid-black/[0.02] dark:bg-grid-white/[0.02] bg-[size:30px_30px]" />
         <div className="gov-container relative z-10">
-          <div className="text-center mb-16 animate-fade-in max-w-3xl mx-auto">
+          <div className="text-center animate-fade-in max-w-3xl mx-auto">
             <h2 className="text-4xl lg:text-5xl font-bold text-foreground mb-6 tracking-tight">
               Get in <span className="text-gradient">Touch</span>
             </h2>
             <p className="text-lg lg:text-xl text-muted-foreground leading-relaxed">
-              We're here to help! Connect with us through our socials or reach out to our team members directly.
+              We're here to help! Connect with us through email or reach out to our team members directly.
             </p>
-          </div>
-
-          <div className="max-w-3xl mx-auto">
-            {/* Social Links */}
-            <div className="glass-card bg-white/40 dark:bg-black/20 p-10 flex flex-col items-center text-center hover:border-primary/50 transition-all duration-300 group shadow-xl">
-              <h3 className="text-2xl font-bold mb-8 text-foreground group-hover:text-primary transition-colors">Connect with Us</h3>
-              <div className="flex flex-wrap justify-center gap-6">
-                <a href="#" className="flex flex-col items-center gap-3 p-4 rounded-xl hover:bg-muted/80 transition-all hover:scale-105 hover:text-blue-600">
-                  <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shadow-sm">
-                    <Linkedin className="w-7 h-7" />
-                  </div>
-                  <span className="font-semibold text-sm">LinkedIn</span>
-                </a>
-                <a href="#" className="flex flex-col items-center gap-3 p-4 rounded-xl hover:bg-muted/80 transition-all hover:scale-105 hover:text-pink-600">
-                  <div className="w-14 h-14 rounded-full bg-pink-100 flex items-center justify-center text-pink-600 shadow-sm">
-                    <Instagram className="w-7 h-7" />
-                  </div>
-                  <span className="font-semibold text-sm">Instagram</span>
-                </a>
-                <a href="#" className="flex flex-col items-center gap-3 p-4 rounded-xl hover:bg-muted/80 transition-all hover:scale-105 hover:text-green-600">
-                  <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center text-green-600 shadow-sm">
-                    <MessageCircle className="w-7 h-7" />
-                  </div>
-                  <span className="font-semibold text-sm">WhatsApp</span>
-                </a>
-                <a href="mailto:support@nhms.gov.in" className="flex flex-col items-center gap-3 p-4 rounded-xl hover:bg-muted/80 transition-all hover:scale-105 hover:text-red-500">
-                  <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center text-red-500 shadow-sm">
-                    <Mail className="w-7 h-7" />
-                  </div>
-                  <span className="font-semibold text-sm">Email</span>
-                </a>
-              </div>
-            </div>
-
           </div>
         </div>
       </section>

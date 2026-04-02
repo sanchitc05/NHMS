@@ -225,6 +225,8 @@ export default function RoutePlanner() {
         body: JSON.stringify({
           user: { name: user?.name || 'Local User', phone: '+91 (Auto-detected)', email: user?.email || 'N/A' },
           lastLocation: source.split(',')[0],
+          sourceLocation: source,
+          destLocation: destination,
           searchHistory: `Searched route: ${source.split(',')[0]} to ${destination.split(',')[0]}`,
           escalation: {
             limitExceeded: "-",

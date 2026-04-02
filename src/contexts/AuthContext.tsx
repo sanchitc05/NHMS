@@ -6,6 +6,7 @@ interface User {
   email: string
   role: 'traveller' | 'admin'
   vehicleNumber?: string
+  phone?: string
 }
 
 interface AuthContextType {
@@ -19,6 +20,7 @@ interface AuthContextType {
     vehicleNumber?: string
   ) => Promise<{ success: boolean; requireOtp?: boolean; message?: string }>
   verifyRegistration: (email: string, otp: string) => Promise<{ success: boolean; message?: string }>
+  updateUser: (data: Partial<User>) => Promise<{ success: boolean; message?: string }>
   logout: () => void
 }
 
@@ -31,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return saved ? JSON.parse(saved) : null
   })
 
-  // ✅ REAL LOGIN
+  // REAL LOGIN
   const login = async (email: string, password: string) => {
     try {
       const res = await fetch('http://localhost:3000/api/auth/login', {
@@ -54,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // ✅ REAL REGISTER
+  // REAL REGISTER
   const register = async (
     name: string,
     email: string,
@@ -73,7 +75,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.requireOtp) {
           return { success: true, requireOtp: true, message: data.message };
         }
-        // Fallback for immediate login if OTP is ever disabled
         setUser(data.user);
         localStorage.setItem('nhms_user', JSON.stringify(data.user));
         localStorage.setItem('nhms_token', data.token);
@@ -86,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // ✅ VERIFY REGISTRATION OTP
+  // VERIFY REGISTRATION OTP
   const verifyRegistration = async (email: string, otp: string) => {
     try {
       const res = await fetch('http://localhost:3000/api/auth/verify-registration', {
@@ -109,6 +110,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // UPDATE USER PROFILE
+  const updateUser = async (data: Partial<User>) => {
+    if (!user) return { success: false, message: 'Not logged in' };
+    try {
+      const res = await fetch(`http://localhost:3000/api/auth/profile/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const result = await res.json();
+      
+      if (result.success && result.user) {
+        const updatedUser = { ...user, ...result.user };
+        setUser(updatedUser);
+        localStorage.setItem('nhms_user', JSON.stringify(updatedUser));
+        return { success: true };
+      }
+      return { success: false, message: result.message || 'Update failed' };
+    } catch (err: any) {
+      console.error('Update Profile Error:', err);
+      return { success: false, message: err.message || 'Update failed' };
+    }
+  }
+
   const logout = () => {
     setUser(null)
     localStorage.removeItem('nhms_user')
@@ -123,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         verifyRegistration,
+        updateUser,
         logout,
       }}
     >

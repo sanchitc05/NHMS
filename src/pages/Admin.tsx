@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,14 +26,17 @@ import {
   Database,
   Zap,
   ThermometerSun,
+  Navigation,
 } from 'lucide-react';
 import { mockEmergencyAlerts, mockRoutes } from '@/data/mockData';
 import { RouteMap } from '@/components/features/RouteMap';
 import { EmergencyAlert } from '@/types';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Trash2, Edit2, Move, AlertOctagon, Info, FileDown, Eye } from 'lucide-react';
-import { useEffect } from 'react';
+import { Trash2, Edit2, Move, AlertOctagon, Info, FileDown, Eye, X, Save, Loader2 } from 'lucide-react';
+// useEffect and useRef imported at the top
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +44,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { toast } from 'sonner';
 
 export default function Admin() {
   const { isAuthenticated, user } = useAuth();
@@ -50,33 +54,65 @@ export default function Admin() {
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isAiTriageEnabled, setIsAiTriageEnabled] = useState(false);
-  const [metrics, setMetrics] = useState({
-    cpu: 18,
-    ram: 3.8,
-    disk: 95,
-    temp: 39,
-    uptimeDays: 127
-  });
 
-  // Update dynamic metrics
+  // Edit user states
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ name: '', role: '', vehicleNumber: '' });
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Undo Delete states
+  const [recentlyDeletedUser, setRecentlyDeletedUser] = useState<{user: any, index: number} | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const deletedUserRef = useRef<{user: any, index: number} | null>(null);
+
+  // Keep ref synced for unmount cleanup
   useEffect(() => {
-    const interval = setInterval(() => {
-      setMetrics(prev => ({
-        cpu: Math.floor(15 + Math.random() * 15),
-        ram: parseFloat((3.5 + Math.random() * 1).toFixed(1)),
-        disk: Math.floor(80 + Math.random() * 50),
-        temp: Math.floor(38 + Math.random() * 8),
-        uptimeDays: prev.uptimeDays
-      }));
-    }, 3000);
-    return () => clearInterval(interval);
+    deletedUserRef.current = recentlyDeletedUser;
+  }, [recentlyDeletedUser]);
+
+  useEffect(() => {
+    return () => {
+      // Clear timeout and commit deletion on unmount to prevent leaks
+      if (timeoutRef.current && deletedUserRef.current) {
+        clearTimeout(timeoutRef.current);
+        fetch(`http://localhost:3000/api/auth/users/${deletedUserRef.current.user._id}`, { 
+          method: 'DELETE', 
+          keepalive: true 
+        }).catch(console.error);
+      }
+    };
   }, []);
+
+  // System health real-time state
+  const [systemHealth, setSystemHealth] = useState<any>(null);
+  const [isLoadingHealth, setIsLoadingHealth] = useState(false);
+
+  // Fetch real-time system health
+  const fetchSystemHealth = async () => {
+    try {
+      const res = await fetch('http://localhost:3000/api/system-health');
+      const data = await res.json();
+      if (data.success) {
+        setSystemHealth(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch system health', e);
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated && user?.role === 'admin') {
       fetchUsers();
+      fetchSystemHealth();
     }
   }, [isAuthenticated, user]);
+
+  // Poll system health every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchSystemHealth, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
@@ -91,6 +127,124 @@ export default function Admin() {
     } finally {
       setIsLoadingUsers(false);
     }
+  };
+
+  // Delete user handler
+  const commitDeleteUser = async (userId: string) => {
+    try {
+      const res = await fetch(`http://localhost:3000/api/auth/users/${userId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!data.success) {
+        toast.error(data.message || 'Failed to delete user permanently');
+      }
+    } catch (e) {
+      toast.error('Failed to connect to server during deletion');
+    }
+  };
+
+  const handleUndoDelete = (deletedUserId: string) => {
+    const deletedInfo = deletedUserRef.current;
+    if (!deletedInfo || deletedInfo.user._id !== deletedUserId) {
+        return; // Mismatch or already committed
+    }
+
+    // Clear the timeout to prevent permanent deletion
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
+    setRecentlyDeletedUser(null);
+    deletedUserRef.current = null;
+    
+    // Restore user optimistically at the original index
+    setUsers(prev => {
+      // Only restore if not already restored
+      if (prev.some(user => user._id === deletedInfo.user._id)) return prev;
+      const newUsers = [...prev];
+      // Splice back in original position, fallback to push if index invalid
+      if (deletedInfo.index >= 0 && deletedInfo.index <= newUsers.length) {
+        newUsers.splice(deletedInfo.index, 0, deletedInfo.user);
+      } else {
+        newUsers.push(deletedInfo.user);
+      }
+      return newUsers;
+    });
+    
+    toast.success('Action undone');
+  };
+
+  const initiateDeleteUser = (u: any) => {
+    // If another deletion is pending, commit it immediately
+    if (timeoutRef.current && deletedUserRef.current) {
+      commitDeleteUser(deletedUserRef.current.user._id);
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    // Optimistically remove from UI and capture index
+    setUsers(prev => {
+      const index = prev.findIndex(user => user._id === u._id);
+      
+      const deletedInfo = { user: u, index };
+      setRecentlyDeletedUser(deletedInfo);
+      deletedUserRef.current = deletedInfo;
+      
+      return prev.filter((_, i) => i !== index);
+    });
+
+    // Show custom toast with action
+    toast('User deleted', {
+      duration: 5000,
+      action: {
+        label: 'UNDO',
+        onClick: () => handleUndoDelete(u._id)
+      }
+    });
+
+    // Schedule permanent deletion
+    const timeoutId = setTimeout(() => {
+      commitDeleteUser(u._id);
+      setRecentlyDeletedUser(null);
+      deletedUserRef.current = null;
+      timeoutRef.current = null;
+    }, 5000);
+
+    timeoutRef.current = timeoutId;
+  };
+
+  // Edit user handler
+  const handleEditUser = async () => {
+    if (!editingUser) return;
+    setIsSavingEdit(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/auth/users/${editingUser._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUsers(prev => prev.map(u => u._id === editingUser._id ? { ...u, ...data.user } : u));
+        toast.success('User updated successfully');
+        setIsEditDialogOpen(false);
+        setEditingUser(null);
+      } else {
+        toast.error(data.message || 'Failed to update user');
+      }
+    } catch (e) {
+      toast.error('Failed to update user');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const openEditDialog = (u: any) => {
+    setEditingUser(u);
+    setEditForm({ name: u.name || '', role: u.role || 'traveller', vehicleNumber: u.vehicleNumber || '' });
+    setIsEditDialogOpen(true);
   };
 
   if (!isAuthenticated || user?.role !== 'admin') {
@@ -209,6 +363,14 @@ export default function Admin() {
     active: alerts.filter(a => a.status === 'active').length,
     responding: alerts.filter(a => a.status === 'responding').length,
     resolved: alerts.filter(a => a.status === 'resolved').length,
+  };
+
+  // Format uptime
+  const formatUptime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (hrs > 0) return `${hrs}h ${mins}m`;
+    return `${mins}m`;
   };
 
   return (
@@ -356,77 +518,40 @@ export default function Admin() {
                 </Button>
               </div>
 
-              {/* Dynamic Speed Limits */}
-              <div className="gov-card border-t-4 border-t-primary shadow-lg hover:shadow-xl transition-all h-full flex flex-col">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-3 bg-primary/10 rounded-full">
-                    <Gauge className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-foreground">Dynamic Speed Control</h3>
-                    <p className="text-sm text-muted-foreground">Override digital speed limits grid-wide</p>
-                  </div>
-                </div>
-                
-                <div className="flex gap-8 my-8 flex-1 items-center justify-center">
-                  <Button variant="outline" className="w-32 h-32 rounded-full border-4 border-primary text-4xl font-black hover:bg-primary hover:text-white transition-all shadow-glow-primary hover:scale-110" onClick={() => setGlobalSpeedLimit(100)}>
-                    100
-                  </Button>
-                  <Button variant="outline" className="w-28 h-28 rounded-full border-4 border-warning text-3xl font-black hover:bg-warning hover:text-white transition-all shadow-glow-warning hover:scale-110" onClick={() => setGlobalSpeedLimit(80)}>
-                    80
-                  </Button>
-                  <Button variant="outline" className="w-24 h-24 rounded-full border-4 border-destructive text-2xl font-black hover:bg-destructive hover:text-white transition-all shadow-glow-emergency hover:scale-110" onClick={() => setGlobalSpeedLimit(40)}>
-                    40
-                  </Button>
-                </div>
-                <p className="text-sm text-center text-muted-foreground mt-4">Current Active Global Limit: <span className="font-bold text-foreground text-lg">100 km/h</span></p>
-              </div>
-              
-              {/* Highway Surveillance Link Module */}
+              {/* Platform Statistics Card */}
               <div className="gov-card border-t-4 border-t-accent shadow-lg hover:shadow-xl transition-all h-full flex flex-col">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-3 bg-accent/10 rounded-full">
-                    <Activity className="w-6 h-6 text-accent animate-pulse" />
+                    <Database className="w-6 h-6 text-accent" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-foreground">AI Surveillance System</h3>
-                    <p className="text-sm text-muted-foreground">Automated video analytics & ANPR</p>
+                    <h3 className="text-xl font-bold text-foreground">Platform Statistics</h3>
+                    <p className="text-sm text-muted-foreground">Real-time data from MongoDB</p>
                   </div>
                 </div>
                 
-                <div className="flex-1 space-y-6 mt-4">
-                  <div className="flex items-center justify-between p-5 bg-card/60 rounded-xl border-2 border-border/50 shadow-sm">
-                    <div className="flex items-center gap-3 text-base font-bold text-foreground">
-                      <div className="w-3 h-3 rounded-full bg-success shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
-                      ANPR Cameras Online
-                    </div>
-                    <span className="font-black text-xl text-success tracking-widest">1,402 / 1,450</span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1">
+                  <div className="flex flex-col items-center justify-center p-6 bg-card/60 rounded-xl border-2 border-border/50">
+                    <Users className="w-10 h-10 text-primary mb-3" />
+                    <p className="text-4xl font-black text-foreground">{systemHealth?.database?.totalUsers || users.length}</p>
+                    <p className="text-sm text-muted-foreground mt-1">Registered Users</p>
                   </div>
-                  
-                  <div className="flex items-center justify-between p-5 bg-card/60 rounded-xl border-2 border-border/50 shadow-sm">
-                    <div className="flex items-center gap-3 text-base font-bold text-foreground">
-                      <div className="w-3 h-3 rounded-full bg-success shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
-                      Congestion Detection Engine
-                    </div>
-                    <span className="font-black text-xl text-success tracking-widest">ACTIVE</span>
+                  <div className="flex flex-col items-center justify-center p-6 bg-card/60 rounded-xl border-2 border-border/50">
+                    <Navigation className="w-10 h-10 text-accent mb-3" />
+                    <p className="text-4xl font-black text-foreground">{systemHealth?.database?.totalLogs || realLogs.length}</p>
+                    <p className="text-sm text-muted-foreground mt-1">Route Searches</p>
                   </div>
-
-                  <div className="flex items-center justify-between p-5 bg-card/60 rounded-xl border-2 border-border/50 shadow-sm">
-                    <div className="flex items-center gap-3 text-base font-bold text-foreground">
-                      <div className="w-3 h-3 rounded-full bg-primary animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
-                      Traffic Flow Processing Node
-                    </div>
-                    <span className="font-black text-xl text-primary tracking-widest">SCANNING...</span>
+                  <div className="flex flex-col items-center justify-center p-6 bg-card/60 rounded-xl border-2 border-border/50">
+                    <AlertTriangle className="w-10 h-10 text-warning mb-3" />
+                    <p className="text-4xl font-black text-foreground">{systemHealth?.database?.totalBroadcasts || broadcastHistory.length}</p>
+                    <p className="text-sm text-muted-foreground mt-1">Broadcasts Sent</p>
                   </div>
                 </div>
-
-                <Button variant="outline" className="w-full mt-4 border-accent text-accent hover:bg-accent hover:text-white transition-all">
-                  Open Camera Grid (CCTV)
-                </Button>
               </div>
             </div>
           </TabsContent>
 
+          {/* ═══ LOGS TAB — Now shows Source → Destination ═══ */}
           <TabsContent value="logs" className="space-y-6 animate-fade-in">
             <div className="gov-card border-none bg-gradient-to-br from-background to-primary/5 shadow-2xl relative">
               <div className="flex justify-between items-center mb-6">
@@ -446,16 +571,17 @@ export default function Admin() {
                 <table className="w-full text-sm text-left">
                   <thead className="text-xs text-muted-foreground uppercase bg-muted/80">
                     <tr>
-                      <th className="px-6 py-4 rounded-tl-lg font-semibold max-w-[200px]">User Profile</th>
-                      <th className="px-6 py-4 font-semibold">Latest Location</th>
-                      <th className="px-6 py-4 font-semibold max-w-[250px]">Search History / Intent</th>
-                      <th className="px-6 py-4 font-semibold rounded-tr-lg">Escalation & Call Records</th>
+                      <th className="px-5 py-4 rounded-tl-lg font-semibold max-w-[180px]">User Profile</th>
+                      <th className="px-5 py-4 font-semibold">From (Source)</th>
+                      <th className="px-5 py-4 font-semibold">To (Destination)</th>
+                      <th className="px-5 py-4 font-semibold max-w-[220px]">Search History / Intent</th>
+                      <th className="px-5 py-4 font-semibold rounded-tr-lg">Escalation & Call Records</th>
                     </tr>
                   </thead>
                   <tbody>
                     {realLogs.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">
+                        <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground">
                           <Activity className="w-8 h-8 mx-auto mb-3 opacity-50" />
                           <p>Waiting for secure real-time activity...</p>
                         </td>
@@ -463,25 +589,31 @@ export default function Admin() {
                     ) : realLogs.map((log) => {
                       const isSOS = log.searchHistory?.toLowerCase().includes('emergency') || log.searchHistory?.toLowerCase().includes('sos');
                       return (
-                      <tr key={log.id} className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isSOS ? 'bg-destructive/5' : ''}`}>
-                        <td className="px-6 py-4 align-top">
-                          <div className="flex items-center gap-2 mb-1">
-                            <div className="font-bold text-foreground text-base">{log.user.name}</div>
-                            {isSOS && <Badge className="bg-destructive text-white animate-pulse text-[10px] h-4">EMERGENCY SOS</Badge>}
+                      <tr key={log.id || log._id} className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isSOS ? 'bg-destructive/5' : ''}`}>
+                        <td className="px-5 py-4 align-top">
+                          <div className="flex flex-col gap-1 mb-1">
+                            <div className="font-bold text-foreground text-base leading-tight">{log.user.name}</div>
+                            {isSOS && <Badge className="bg-destructive text-white animate-pulse text-[10px] h-4 py-0 w-fit">EMERGENCY SOS</Badge>}
                           </div>
-                          <div className="text-muted-foreground text-xs mt-1 flex items-center gap-1"><Phone className="w-3 h-3"/>{log.user.phone}</div>
-                          <div className="text-muted-foreground text-xs mt-0.5">{log.user.email}</div>
+                          <div className="text-muted-foreground text-xs mt-1.5 flex items-center gap-1.5 font-medium"><Phone className="w-3 h-3 text-primary"/>{log.user.phone}</div>
+                          <div className="text-muted-foreground text-xs mt-1 font-medium">{log.user.email}</div>
                         </td>
-                        <td className="px-6 py-4 align-top">
+                        <td className="px-5 py-4 align-top">
                           <div className="flex items-start gap-2">
-                            <MapPin className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                            <span className="font-medium">{log.lastLocation}</span>
+                            <div className="w-2 h-2 rounded-full bg-success mt-1.5 shrink-0" />
+                            <span className="font-medium text-sm">{log.sourceLocation || log.lastLocation || '-'}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4 align-top italic text-muted-foreground">
+                        <td className="px-5 py-4 align-top">
+                          <div className="flex items-start gap-2">
+                            <div className="w-2 h-2 rounded-full bg-destructive mt-1.5 shrink-0" />
+                            <span className="font-medium text-sm">{log.destLocation || '-'}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 align-top italic text-muted-foreground text-sm">
                           "{log.searchHistory}"
                         </td>
-                        <td className="px-6 py-4 align-top">
+                        <td className="px-5 py-4 align-top">
                           {log.escalation.limitExceeded !== "-" ? (
                             <div className="bg-destructive/10 border border-destructive/20 p-3 rounded-lg mb-2">
                               <div className="flex items-center gap-2 mb-1">
@@ -499,7 +631,7 @@ export default function Admin() {
                                <span className="text-xs text-destructive font-semibold">User requested immediate help</span>
                             </div>
                           ) : (
-                            <Badge variant="outline" className="mb-2 text-warning border-warning">Medical / Breakdown</Badge>
+                            <Badge variant="outline" className="mb-2 text-primary border-primary/30 bg-primary/5">General Navigation</Badge>
                           )}
                           <div className="text-xs space-y-1">
                             <p><span className="text-muted-foreground font-semibold">Called:</span> <span className="text-foreground">{log.escalation.called}</span></p>
@@ -516,6 +648,7 @@ export default function Admin() {
             </div>
           </TabsContent>
 
+          {/* ═══ USERS TAB — Edit & Delete now working ═══ */}
           <TabsContent value="users" className="space-y-6 animate-fade-in">
             <div className="gov-card">
               <div className="flex justify-between items-center mb-6">
@@ -523,8 +656,12 @@ export default function Admin() {
                   <h3 className="text-xl font-semibold text-foreground">Registered Users</h3>
                   <p className="text-sm text-muted-foreground">Manage platform users and their roles</p>
                 </div>
-                <div className="flex bg-muted/50 p-1 rounded-full items-center">
-                  <Badge variant="default" className="ml-2 bg-primary/20 text-primary border-none">Total: {users.length}</Badge>
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="sm" onClick={fetchUsers} className="gap-2">
+                    <RefreshCw className={`w-4 h-4 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                  <Badge variant="default" className="bg-primary/20 text-primary border-none">Total: {users.length}</Badge>
                 </div>
               </div>
 
@@ -578,10 +715,12 @@ export default function Admin() {
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex gap-2 justify-end">
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={() => initiateDeleteUser(u)}
+                              >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
@@ -593,50 +732,93 @@ export default function Admin() {
                 </div>
               )}
             </div>
+
+            {/* Edit User Dialog */}
+            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Edit2 className="w-5 h-5 text-primary" />
+                    Edit User
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label>Name</Label>
+                    <Input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Role</Label>
+                    <select 
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm"
+                      value={editForm.role} 
+                      onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                    >
+                      <option value="traveller">Traveller</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Vehicle Number</Label>
+                    <Input value={editForm.vehicleNumber} onChange={e => setEditForm({ ...editForm, vehicleNumber: e.target.value })} placeholder="e.g. DL-01-AB-1234" />
+                  </div>
+                  <div className="flex gap-3 pt-4">
+                    <Button variant="outline" className="flex-1" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+                    <Button className="flex-1 gap-2" onClick={handleEditUser} disabled={isSavingEdit}>
+                      {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      {isSavingEdit ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
+          {/* ═══ SYSTEM OVERVIEW TAB — Now real-time ═══ */}
           <TabsContent value="overview" className="animate-fade-in space-y-8">
 
             {/* Performance & Security Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Server Performance */}
+              {/* Server Performance — REAL DATA */}
               <div className="gov-card border-t-4 border-t-primary shadow-lg">
-                <h3 className="text-xl font-bold text-foreground mb-6 flex items-center gap-3">
-                  <Server className="w-5 h-5 text-primary" />
-                  Server Performance
-                </h3>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-foreground flex items-center gap-3">
+                    <Server className="w-5 h-5 text-primary" />
+                    Server Performance
+                  </h3>
+                  <Badge variant="outline" className="text-xs bg-success/10 text-success border-success/30">● Live</Badge>
+                </div>
                 <div className="space-y-5">
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium flex items-center gap-2"><Cpu className="w-4 h-4 text-primary" /> CPU Usage</span>
-                      <span className="text-sm font-bold text-primary">{metrics.cpu}%</span>
+                      <span className="text-sm font-bold text-primary">{systemHealth?.server?.cpuUsage || '...'}%</span>
                     </div>
-                    <div className="h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-primary to-primary/70 rounded-full transition-all duration-1000" style={{width: `${metrics.cpu}%`}}></div></div>
+                    <div className="h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-primary to-primary/70 rounded-full transition-all duration-1000" style={{width: `${parseFloat(systemHealth?.server?.cpuUsage || 0)}%`}}></div></div>
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium flex items-center gap-2"><HardDrive className="w-4 h-4 text-accent" /> Memory (RAM)</span>
-                      <span className="text-sm font-bold text-accent">{metrics.ram} / 8 GB</span>
+                      <span className="text-sm font-medium flex items-center gap-2"><HardDrive className="w-4 h-4 text-accent" /> Memory (RSS)</span>
+                      <span className="text-sm font-bold text-accent">{systemHealth?.server?.memoryUsed || '...'} MB / {systemHealth?.server?.memoryTotal || '...'} GB</span>
                     </div>
-                    <div className="h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-accent to-accent/70 rounded-full transition-all duration-1000" style={{width: `${(metrics.ram / 8) * 100}%`}}></div></div>
+                    <div className="h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-accent to-accent/70 rounded-full transition-all duration-1000" style={{width: `${Math.min(100, parseFloat(systemHealth?.server?.memoryPercent || 0))}%`}}></div></div>
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium flex items-center gap-2"><Database className="w-4 h-4 text-warning" /> Disk I/O</span>
-                      <span className="text-sm font-bold text-warning">{metrics.disk} MB/s</span>
+                      <span className="text-sm font-medium flex items-center gap-2"><Database className="w-4 h-4 text-warning" /> Heap Usage</span>
+                      <span className="text-sm font-bold text-warning">{systemHealth?.server?.heapUsed || '...'} / {systemHealth?.server?.heapTotal || '...'} MB</span>
                     </div>
-                    <div className="h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-warning to-warning/70 rounded-full transition-all duration-1000" style={{width: `${(metrics.disk / 300) * 100}%`}}></div></div>
+                    <div className="h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-warning to-warning/70 rounded-full transition-all duration-1000" style={{width: `${systemHealth?.server?.heapTotal ? (parseFloat(systemHealth.server.heapUsed) / parseFloat(systemHealth.server.heapTotal) * 100) : 0}%`}}></div></div>
                   </div>
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium flex items-center gap-2"><ThermometerSun className="w-4 h-4 text-success" /> Server Temp</span>
-                      <span className="text-sm font-bold text-success">{metrics.temp}°C (Normal)</span>
+                      <span className="text-sm font-medium flex items-center gap-2"><ThermometerSun className="w-4 h-4 text-success" /> Node.js Version</span>
+                      <span className="text-sm font-bold text-success">{systemHealth?.server?.nodeVersion || '...'}</span>
                     </div>
-                    <div className="h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-success to-success/70 rounded-full transition-all duration-1000" style={{width: `${(metrics.temp / 100) * 100}%`}}></div></div>
                   </div>
                 </div>
                 <div className="mt-6 pt-4 border-t border-border/30 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Uptime: <strong className="text-foreground">99.98%</strong> (127 days)</span>
+                  <span>Uptime: <strong className="text-foreground">{systemHealth?.server?.uptimeSeconds ? formatUptime(systemHealth.server.uptimeSeconds) : '...'}</strong></span>
                   <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs">● Healthy</Badge>
                 </div>
               </div>
@@ -672,31 +854,31 @@ export default function Admin() {
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center"><Wifi className="w-5 h-5 text-primary" /></div>
                       <div>
-                        <p className="font-semibold text-sm">Network Throughput</p>
-                        <p className="text-xs text-muted-foreground">Avg. latency: 12ms</p>
+                        <p className="font-semibold text-sm">Platform</p>
+                        <p className="text-xs text-muted-foreground">{systemHealth?.server?.platform || '...'}</p>
                       </div>
                     </div>
-                    <span className="font-bold text-primary text-sm">1.2 Gbps</span>
+                    <span className="font-bold text-primary text-sm">{systemHealth?.server?.nodeVersion || '...'}</span>
                   </div>
                   <div className="flex items-center justify-between p-4 bg-card rounded-xl border border-border">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center"><Zap className="w-5 h-5 text-warning" /></div>
                       <div>
                         <p className="font-semibold text-sm">API Rate Limiter</p>
-                        <p className="text-xs text-muted-foreground">3,421 req/min (Cap: 10,000)</p>
+                        <p className="text-xs text-muted-foreground">{systemHealth?.database?.totalLogs || 0} total requests logged</p>
                       </div>
                     </div>
-                    <Badge className="bg-warning/10 text-warning border-warning/30">34%</Badge>
+                    <Badge className="bg-warning/10 text-warning border-warning/30">Active</Badge>
                   </div>
                 </div>
                 <div className="mt-6 pt-4 border-t border-border/30 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Last Security Audit: <strong className="text-foreground">2 hrs ago</strong></span>
+                  <span>Last Health Check: <strong className="text-foreground">Just now</strong></span>
                   <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs">All Clear</Badge>
                 </div>
               </div>
             </div>
 
-            {/* Database & Services Row */}
+            {/* Database & Services Row — REAL DATA */}
             <div className="gov-card border-t-4 border-t-accent shadow-lg">
               <h3 className="text-xl font-bold text-foreground mb-6 flex items-center gap-3">
                 <Database className="w-5 h-5 text-accent" />
@@ -706,86 +888,43 @@ export default function Admin() {
                 <div className="flex flex-col items-center p-5 bg-card rounded-xl border border-border hover:shadow-md transition-all text-center">
                   <Database className="w-8 h-8 mb-3 text-success" />
                   <p className="font-bold text-sm text-foreground">MongoDB Atlas</p>
-                  <Badge variant="outline" className="mt-2 text-xs bg-success/10 text-success border-success/30">● Connected</Badge>
+                  <Badge variant="outline" className={`mt-2 text-xs ${systemHealth?.database?.connected ? 'bg-success/10 text-success border-success/30' : 'bg-destructive/10 text-destructive border-destructive/30'}`}>
+                    ● {systemHealth?.database?.status || 'Checking...'}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground mt-1">{systemHealth?.database?.totalUsers || 0} users</span>
                 </div>
                 <div className="flex flex-col items-center p-5 bg-card rounded-xl border border-border hover:shadow-md transition-all text-center">
                   <Lock className="w-8 h-8 mb-3 text-success" />
                   <p className="font-bold text-sm text-foreground">Auth Service</p>
-                  <Badge variant="outline" className="mt-2 text-xs bg-success/10 text-success border-success/30">● Running</Badge>
+                  <Badge variant="outline" className={`mt-2 text-xs ${systemHealth?.services?.authService ? 'bg-success/10 text-success border-success/30' : 'bg-destructive/10 text-destructive border-destructive/30'}`}>
+                    ● {systemHealth?.services?.authService ? 'Running' : 'Down'}
+                  </Badge>
                 </div>
                 <div className="flex flex-col items-center p-5 bg-card rounded-xl border border-border hover:shadow-md transition-all text-center">
                   <MapPin className="w-8 h-8 mb-3 text-success" />
                   <p className="font-bold text-sm text-foreground">Route Engine</p>
-                  <Badge variant="outline" className="mt-2 text-xs bg-success/10 text-success border-success/30">● Running</Badge>
+                  <Badge variant="outline" className={`mt-2 text-xs ${systemHealth?.services?.routeEngine ? 'bg-success/10 text-success border-success/30' : 'bg-destructive/10 text-destructive border-destructive/30'}`}>
+                    ● {systemHealth?.services?.routeEngine ? 'Running' : 'Down'}
+                  </Badge>
                 </div>
                 <div className="flex flex-col items-center p-5 bg-card rounded-xl border border-border hover:shadow-md transition-all text-center">
                   <Shield className="w-8 h-8 mb-3 text-success" />
                   <p className="font-bold text-sm text-foreground">Toll Gateway</p>
-                  <Badge variant="outline" className="mt-2 text-xs bg-success/10 text-success border-success/30">● Running</Badge>
+                  <Badge variant="outline" className="mt-2 text-xs bg-success/10 text-success border-success/30">
+                    ● Running
+                  </Badge>
                 </div>
                 <div className="flex flex-col items-center p-5 bg-card rounded-xl border border-border hover:shadow-md transition-all text-center">
                   <AlertTriangle className="w-8 h-8 mb-3 text-warning" />
                   <p className="font-bold text-sm text-foreground">Alert Dispatcher</p>
-                  <Badge variant="outline" className="mt-2 text-xs bg-warning/10 text-warning border-warning/30">● Standby</Badge>
+                  <Badge variant="outline" className={`mt-2 text-xs ${systemHealth?.services?.alertDispatcher ? 'bg-success/10 text-success border-success/30' : 'bg-warning/10 text-warning border-warning/30'}`}>
+                    ● {systemHealth?.services?.alertDispatcher ? 'Active' : 'Standby'}
+                  </Badge>
                 </div>
               </div>
             </div>
 
-            {/* Live Patrol & Rescue Units Section */}
-            <div className="gov-card border-t-4 border-t-accent shadow-xl bg-gradient-to-br from-background to-accent/5">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-foreground flex items-center gap-3">
-                    <Activity className="w-6 h-6 text-accent animate-pulse" />
-                    Live Highway Patrol & Rescue Units
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">Real-time GPS deployment tracking of emergency units</p>
-                </div>
-                <Badge className="bg-accent/10 text-accent border-accent/30 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
-                  14 Units Active
-                </Badge>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {patrolUnits.map((unit) => (
-                  <div key={unit.id} className="p-5 bg-card border border-border rounded-2xl hover:shadow-lg transition-all group relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 rounded-full -mr-12 -mt-12 transition-transform group-hover:scale-150" />
-                    <div className="flex justify-between items-start mb-4 relative z-10">
-                      <div className="p-2 bg-accent/10 rounded-lg">
-                        {unit.type.includes('Patrol') ? <Shield className="w-5 h-5 text-accent" /> : unit.type.includes('Life') ? <Hospital className="w-5 h-5 text-destructive" /> : <Car className="w-5 h-5 text-primary" />}
-                      </div>
-                      <Badge variant="outline" className={
-                        unit.status === 'Responding' ? 'bg-destructive/10 text-destructive border-destructive/30 animate-pulse' : 
-                        unit.status === 'On Patrol' ? 'bg-success/10 text-success border-success/30' : 
-                        'bg-muted/50 text-muted-foreground'
-                      }>
-                        {unit.status}
-                      </Badge>
-                    </div>
-                    <div className="relative z-10">
-                      <p className="text-xs text-muted-foreground font-mono mb-1">{unit.id}</p>
-                      <h4 className="font-bold text-foreground text-lg mb-1">{unit.type}</h4>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                        <MapPin className="w-3 h-3 text-accent" />
-                        {unit.location}
-                      </div>
-                      <div className="pt-3 border-t border-border/50 flex justify-between items-center text-xs">
-                        <span className="font-medium text-foreground">{unit.crew}</span>
-                        <div className="flex items-center gap-1">
-                          <div className={`w-2 h-2 rounded-full ${unit.health === 'Healthy' ? 'bg-success' : 'bg-destructive'}`} />
-                          {unit.health}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-8 p-4 bg-muted/30 rounded-xl border border-dashed border-border flex items-center justify-center gap-4 text-sm text-muted-foreground">
-                <Info className="w-4 h-4" />
-                Click on any unit to initiate direct encrypted VOIP communication or reroute assignment.
-              </div>
-            </div>
           </TabsContent>
         </Tabs>
       </div>

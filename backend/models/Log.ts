@@ -14,6 +14,8 @@ const LogSchema = new mongoose.Schema({
     email: { type: String }
   },
   lastLocation: { type: String },
+  sourceLocation: { type: String },
+  destLocation: { type: String },
   searchHistory: { type: String },
   escalation: EscalationSchema,
   timestamp: { type: Number, default: Date.now }
