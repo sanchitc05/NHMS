@@ -223,7 +223,11 @@ export default function RoutePlanner() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user: { name: user?.name || 'Local User', phone: '+91 (Auto-detected)', email: user?.email || 'N/A' },
+          user: { 
+            name: user?.name || 'Local User', 
+            phone: user?.phone || '+91 (Auto-detected)', 
+            email: user?.email || 'N/A' 
+          },
           lastLocation: source.split(',')[0],
           sourceLocation: source,
           destLocation: destination,
@@ -231,7 +235,15 @@ export default function RoutePlanner() {
           escalation: {
             limitExceeded: "-",
             called: "-",
-            date: new Date().toLocaleTimeString(),
+            date: new Date().toLocaleString('en-IN', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric', 
+              hour: '2-digit', 
+              minute: '2-digit', 
+              second: '2-digit', 
+              hour12: true 
+            }),
             incidentLocation: "-"
           }
         })

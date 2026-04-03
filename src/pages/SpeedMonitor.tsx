@@ -248,13 +248,27 @@ export default function SpeedMonitor() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user: { name: user?.name || 'Local User', phone: '+91 (Auto-detected)', email: user?.email || 'N/A' },
+          user: { 
+            name: user?.name || 'Local User', 
+            phone: user?.phone || '+91 (Auto-detected)', 
+            email: user?.email || 'N/A' 
+          },
           lastLocation: latestRoadRef.current,
-          searchHistory: "Active Driving Mode",
+          sourceLocation: latestRoadRef.current,
+          destLocation: "Automated Speed Control",
+          searchHistory: `Overspeed Alert - ${latestSpeedRef.current} KM/H detected`,
           escalation: {
             limitExceeded: `${latestSpeedRef.current} km/h (Limit: ${latestLimitRef.current})`,
             called: "Highway Patrol & 1033",
-            date: new Date().toLocaleTimeString(),
+            date: new Date().toLocaleString('en-IN', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric', 
+              hour: '2-digit', 
+              minute: '2-digit', 
+              second: '2-digit', 
+              hour12: true 
+            }),
             incidentLocation: latestRoadRef.current
           }
         })
