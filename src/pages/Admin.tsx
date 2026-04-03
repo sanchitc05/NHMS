@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/layout/Layout';
+import { API_BASE_URL } from '@/lib/api-config';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -91,7 +92,7 @@ export default function Admin() {
   // Fetch real-time system health
   const fetchSystemHealth = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/system-health');
+      const res = await fetch(`${API_BASE_URL}/api/system-health`);
       const data = await res.json();
       if (data.success) {
         setSystemHealth(data);
@@ -117,7 +118,7 @@ export default function Admin() {
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
     try {
-      const res = await fetch('http://localhost:3000/api/auth/users');
+      const res = await fetch(`${API_BASE_URL}/api/auth/users`);
       const data = await res.json();
       if (data.success) {
         setUsers(data.users || []);
@@ -132,7 +133,7 @@ export default function Admin() {
   // Delete user handler
   const commitDeleteUser = async (userId: string) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/auth/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/auth/users/${userId}`, {
         method: 'DELETE',
       });
       const data = await res.json();
@@ -220,7 +221,7 @@ export default function Admin() {
     if (!editingUser) return;
     setIsSavingEdit(true);
     try {
-      const res = await fetch(`http://localhost:3000/api/auth/users/${editingUser._id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/auth/users/${editingUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm),
@@ -262,7 +263,7 @@ export default function Admin() {
     }
 
     try {
-      await fetch('http://localhost:3000/api/admin/state', {
+      await fetch(`${API_BASE_URL}/api/admin/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ broadcast: { message, active: true, type, time: Date.now() } })
@@ -277,7 +278,7 @@ export default function Admin() {
 
   const setGlobalSpeedLimit = async (limit: number) => {
     try {
-      await fetch('http://localhost:3000/api/admin/state', {
+      await fetch(`${API_BASE_URL}/api/admin/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ speedLimit: limit })
@@ -290,7 +291,7 @@ export default function Admin() {
 
   const toggleTollPlaza = async (route: string, status: 'Open' | 'Free Passage' | 'Closed') => {
     try {
-      await fetch('http://localhost:3000/api/admin/state', {
+      await fetch(`${API_BASE_URL}/api/admin/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tollOverride: { route, status, time: Date.now() } })
@@ -313,7 +314,7 @@ export default function Admin() {
 
   const pollLogs = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/admin/state');
+      const res = await fetch(`${API_BASE_URL}/api/admin/state`);
       const data = await res.json();
       
       // Update logs if changed

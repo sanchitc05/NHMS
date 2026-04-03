@@ -7,7 +7,7 @@ interface Suggestion {
   type: string;
 }
 
-const API_URL = 'http://localhost:3000/api';
+import { API_URL } from '@/lib/api-config';
 
 export function useAutocomplete(query: string, enabled: boolean = true) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);

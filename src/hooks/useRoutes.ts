@@ -8,7 +8,7 @@ interface RoutesApiResponse {
 }
 
 // Use the local backend instead of Supabase
-const API_URL = 'http://localhost:3000/api';
+import { API_URL } from '@/lib/api-config';
 
 async function fetchRoutes(
   source?: string,

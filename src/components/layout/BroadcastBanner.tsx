@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { API_BASE_URL } from '@/lib/api-config';
 
 export function BroadcastBanner() {
   const [broadcast, setBroadcast] = useState<{ message: string; active: boolean; type: string } | null>(null);
@@ -7,7 +8,7 @@ export function BroadcastBanner() {
   useEffect(() => {
     const pollState = async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/admin/state');
+        const res = await fetch(`${API_BASE_URL}/api/admin/state`);
         const data = await res.json();
         if (data.broadcast && data.broadcast.active) {
           setBroadcast(data.broadcast);

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react'
+import { API_BASE_URL } from '@/lib/api-config'
 
 interface User {
   id: string
@@ -36,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // REAL LOGIN
   const login = async (email: string, password: string) => {
     try {
-      const res = await fetch('http://localhost:3000/api/auth/login', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -64,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     vehicleNumber?: string
   ) => {
     try {
-      const res = await fetch('http://localhost:3000/api/auth/register', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, vehicleNumber }),
@@ -90,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // VERIFY REGISTRATION OTP
   const verifyRegistration = async (email: string, otp: string) => {
     try {
-      const res = await fetch('http://localhost:3000/api/auth/verify-registration', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/verify-registration`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp }),
@@ -114,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = async (data: Partial<User>) => {
     if (!user) return { success: false, message: 'Not logged in' };
     try {
-      const res = await fetch(`http://localhost:3000/api/auth/profile/${user.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/auth/profile/${user.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -164,3 +165,4 @@ export function useAuth() {
   }
   return context
 }
+
