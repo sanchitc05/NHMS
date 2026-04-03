@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +20,17 @@ export default function Profile() {
     phone: user?.phone || '',
     vehicleNumber: user?.vehicleNumber || '',
   });
+
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        vehicleNumber: user.vehicleNumber || '',
+      });
+    }
+  }, [user]);
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;

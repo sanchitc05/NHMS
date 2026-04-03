@@ -1,4 +1,4 @@
-import { Phone, Mail, MapPin } from 'lucide-react';
+import { Phone, Mail } from 'lucide-react';
 import logoImage from '@/assets/logo.jpeg';
 
 export function Footer() {
@@ -57,24 +57,11 @@ export function Footer() {
             <h4 className="font-semibold text-sm uppercase tracking-wider mb-4">Contact Us</h4>
             <ul className="space-y-4 text-[13px] text-primary-foreground/75">
               <li>
-                <a href="mailto:support@nhms.gov.in" className="flex items-center gap-3 hover:text-white hover:translate-x-1 transition-all group">
+                <a href="mailto:nhproject3rdyr@gmail.com" className="flex items-center gap-3 hover:text-white hover:translate-x-1 transition-all group">
                   <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-primary-foreground/20 transition-colors">
                     <Mail className="w-4 h-4" />
                   </div>
-                  <span>support@nhms.gov.in</span>
-                </a>
-              </li>
-              <li>
-                <a 
-                  href="https://www.google.com/maps/search/?api=1&query=Transport+Bhawan,+New+Delhi" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="flex items-center gap-3 hover:text-white hover:translate-x-1 transition-all group"
-                >
-                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-primary-foreground/20 transition-colors">
-                    <MapPin className="w-4 h-4" />
-                  </div>
-                  <span>Transport Bhawan, New Delhi</span>
+                  <span>nhproject3rdyr@gmail.com</span>
                 </a>
               </li>
             </ul>
@@ -105,7 +92,7 @@ export function Footer() {
         </div>
 
         <div className="border-t border-primary-foreground/20 mt-8 pt-8 text-center text-sm text-primary-foreground/60">
-          <p>© 2024 National Highway Management System. Government of India. All rights reserved.</p>
+          <p>© 2026 National Highway Management System. Government of India. All rights reserved.</p>
         </div>
       </div>
     </footer>

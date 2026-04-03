@@ -18,7 +18,9 @@ router.post('/register', async (req, res) => {
   }
 
   let { name, email, password, role, vehicleNumber } = req.body;
-  email = email?.toLowerCase().trim();
+  if (typeof email === 'string') {
+    email = email.toLowerCase().trim();
+  }
 
   try {
     // Check if user already exists
@@ -100,6 +102,7 @@ router.post('/verify-registration', async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          phone: (user as any).phone || '',
           vehicleNumber: user.vehicleNumber
         };
         
@@ -115,7 +118,9 @@ router.post('/verify-registration', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
   let { email, password } = req.body;
-  email = email?.toLowerCase().trim();
+  if (typeof email === 'string') {
+    email = email.toLowerCase().trim();
+  }
 
   // Hardcoded Admin Login
   if (email === 'admin@nhms.com' && password === 'admin123') {
@@ -178,6 +183,7 @@ router.post('/login', async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          phone: (user as any).phone || '',
           vehicleNumber: user.vehicleNumber
         };
         res.json({ success: true, token, user: userWithoutPassword });
@@ -207,9 +213,29 @@ router.get('/users', async (req, res) => {
 router.put('/profile/:id', async (req, res) => {
   try {
     const { name, email, phone, vehicleNumber } = req.body;
+    
+    // Handle mock admin user
+    if (req.params.id === 'admin_001') {
+      return res.json({
+        success: true, 
+        user: {
+          id: 'admin_001',
+          name: name || 'System Administrator',
+          email: email || 'admin@nhms.com',
+          role: 'admin',
+          phone: phone || '',
+          vehicleNumber: vehicleNumber || 'ADMIN-001'
+        }
+      });
+    }
+
     const updateData: any = {};
     if (name) updateData.name = name;
-    if (email) updateData.email = email.toLowerCase().trim();
+    if (typeof email === 'string' && email.trim() !== '') {
+      updateData.email = email.toLowerCase().trim();
+    } else if (email) {
+      updateData.email = email;
+    }
     if (phone !== undefined) updateData.phone = phone;
     if (vehicleNumber !== undefined) updateData.vehicleNumber = vehicleNumber;
     
