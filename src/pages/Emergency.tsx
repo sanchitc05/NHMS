@@ -8,8 +8,6 @@ import {
   Hospital,
   Shield,
   Flame,
-  Mic,
-  MicOff,
   AlertTriangle,
   ChevronRight,
   Heart,
@@ -48,7 +46,6 @@ const firstAidIcons: Record<string, React.ComponentType<{ className?: string }>>
 export default function Emergency() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
-  const [micActive, setMicActive] = useState(false);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'no-answer' | 'message-sent'>('idle');
 
   // Live nearby emergency centers state
@@ -198,20 +195,7 @@ export default function Emergency() {
                 <p className="text-emergency-foreground/80">Press for immediate assistance</p>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              {/* Microphone Button */}
-              <button
-                onClick={() => setMicActive(!micActive)}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
-                  micActive 
-                    ? 'bg-white text-emergency animate-pulse' 
-                    : 'bg-white/20 text-white hover:bg-white/30'
-                }`}
-                aria-label={micActive ? 'Deactivate microphone' : 'Activate microphone'}
-              >
-                {micActive ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
-              </button>
-              <Button 
+            <Button 
                 onClick={handleEmergencyCall}
                 disabled={callStatus !== 'idle'}
                 variant="ghost" 
@@ -228,14 +212,7 @@ export default function Emergency() {
                 {callStatus === 'no-answer' && 'No Answer'}
                 {callStatus === 'message-sent' && 'Alert Sent'}
               </Button>
-            </div>
           </div>
-          {micActive && (
-            <div className="mt-4 p-3 bg-white/20 rounded-lg text-sm flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
-              Microphone active - Voice assistance enabled for emergency support
-            </div>
-          )}
         </div>
 
         {/* Emergency Numbers Grid */}
